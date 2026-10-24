@@ -1,17 +1,28 @@
 import csv
 import io
+import os
 import boto3
 from botocore.exceptions import ClientError, NoCredentialsError
 
-BUCKET = "bucket-noctua"
-REGIAO = "us-east-1"
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
-PREFIXO_METRICAS = "silver/metricas/"
-PREFIXO_PROCESSOS = "silver/processos/"
-PREFIXO_GOLD = "gold/"
+for _var in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"):
+    if not os.environ.get(_var):
+        os.environ.pop(_var, None)
 
-LIMITE_ALTO = 80  
-TOP_PROCESSOS = 20
+BUCKET = os.getenv("BUCKET", "bucket-noctua")
+REGIAO = os.getenv("AWS_REGION", "us-east-1")
+
+PREFIXO_METRICAS = os.getenv("PREFIXO_METRICAS", "silver/metricas/")
+PREFIXO_PROCESSOS = os.getenv("PREFIXO_PROCESSOS", "silver/processos/")
+PREFIXO_GOLD = os.getenv("PREFIXO_GOLD", "gold/")
+
+LIMITE_ALTO = float(os.getenv("LIMITE_ALTO", "80"))  
+TOP_PROCESSOS = int(os.getenv("TOP_PROCESSOS", "20"))
 
 session = boto3.Session(region_name=REGIAO)
 s3 = session.client("s3")
