@@ -6,20 +6,25 @@ import boto3
 from datetime import datetime
 from botocore.exceptions import ClientError, NoCredentialsError
 
-BUCKET = "bucket-noctua"
-INTERVALO = 60
-REGIAO = "us-east-1"
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
-session = boto3.Session(
-    aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-    aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-    aws_session_token=os.getenv("AWS_SESSION_TOKEN"),
-    region_name=REGIAO
-)
+for _var in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"):
+    if not os.environ.get(_var):
+        os.environ.pop(_var, None)
 
+BUCKET = os.getenv("BUCKET", "bucket-noctua")
+INTERVALO = int(os.getenv("INTERVALO", "60"))
+REGIAO = os.getenv("AWS_REGION", "us-east-1")
+PREFIXO_BRONZE = os.getenv("PREFIXO_BRONZE", "bronze/")
+
+session = boto3.Session(region_name=REGIAO)
 s3 = session.client("s3")
 
-HOSTNAMELOCAL = input("Digite o hostname do computador: ")
+HOSTNAMELOCAL = os.getenv("HOSTNAME_LOCAL") or input("Digite o hostname do computador: ")
 
 PASTA_CSV = os.path.dirname(os.path.abspath(__file__))
 CAMINHO_CSV = os.path.join(PASTA_CSV, HOSTNAMELOCAL + ".csv")
@@ -35,7 +40,7 @@ def ler_csv(caminho, avisar=True):
         return list(csv.DictReader(arquivo))
 
 
-ultimo_ts = ""  
+ultimo_ts = "" 
 
 while True:
     if not os.path.exists(CAMINHO_CSV):
@@ -64,9 +69,13 @@ while True:
         json.dump(dados, arquivo, indent=4, ensure_ascii=False)
 
     try:
-        s3.upload_file(Filename=caminho_json, Bucket=BUCKET, Key=f"bronze/{nome_arquivo}")
-        ultimo_ts = metricas[-1]["Timestamp"]  
-        print(f"Arquivo enviado: bronze/{nome_arquivo} ({len(metricas)} linhas)")
+        s3.upload_file(
+            Filename=caminho_json,
+            Bucket=BUCKET,
+            Key=f"{PREFIXO_BRONZE}{nome_arquivo}",
+        )
+        ultimo_ts = metricas[-1]["Timestamp"] 
+        print(f"Arquivo enviado: {PREFIXO_BRONZE}{nome_arquivo} ({len(metricas)} linhas)")
     except NoCredentialsError:
         print("Credenciais AWS não encontradas.")
     except ClientError as e:
