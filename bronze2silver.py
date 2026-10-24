@@ -1,18 +1,29 @@
 import csv
 import io
 import json
+import os
 import time
 import boto3
 from datetime import datetime
 from botocore.exceptions import ClientError, NoCredentialsError
 
-BUCKET = "bucket-noctua"
-REGIAO = "us-east-1"
-INTERVALO = 60
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
-PREFIXO_BRONZE = "bronze/"
-PREFIXO_PROCESSADOS = "bronze/processados/"
-PREFIXO_SILVER = "silver/"
+for _var in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"):
+    if not os.environ.get(_var):
+        os.environ.pop(_var, None)
+
+BUCKET = os.getenv("BUCKET", "bucket-noctua")
+REGIAO = os.getenv("AWS_REGION", "us-east-1")
+INTERVALO = int(os.getenv("INTERVALO", "60"))
+
+PREFIXO_BRONZE = os.getenv("PREFIXO_BRONZE", "bronze/")
+PREFIXO_PROCESSADOS = os.getenv("PREFIXO_PROCESSADOS", "bronze/processados/")
+PREFIXO_SILVER = os.getenv("PREFIXO_SILVER", "silver/")
 
 session = boto3.Session(region_name=REGIAO)
 s3 = session.client("s3")
