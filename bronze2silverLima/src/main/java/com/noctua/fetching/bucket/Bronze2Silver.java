@@ -9,9 +9,7 @@ import software.amazon.awssdk.services.s3.model.ListObjectsRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.s3.model.S3Object;
 
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
+import java.io.*;
 import java.nio.file.Files;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -72,16 +70,79 @@ public class Bronze2Silver {
                     .build();
 
             Integer retirandoPrefixos = nameFile.indexOf("/01-bronze/") + "/01-bronze/".length();
-
             String nomeApenasDoArquivo = nameFile.substring(retirandoPrefixos);
-            File arquivoLocal = new File(nomeApenasDoArquivo);
+
+            File diretorioBronze = new File("bronze");
+            if (!diretorioBronze.exists()) {
+                diretorioBronze.mkdirs();
+            }
+
+            File arquivoLocal = new File(diretorioBronze, nomeApenasDoArquivo);
 
             InputStream inputStream = s3Client.getObject(getObjectRequest, ResponseTransformer.toInputStream());
             Files.copy(inputStream, arquivoLocal.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
 
-            System.out.println("Arquivo baixado com sucesso na raiz: " + nomeApenasDoArquivo);
+            System.out.println("Arquivo baixado com sucesso na pasta bronze: " + arquivoLocal.getPath());
         } catch (IOException | S3Exception e) {
             System.err.println("Erro ao fazer download: " + e.getMessage());
+        }
+    }
+
+    public void fileTransformation(String nameFile) {
+        if (nameFile == null || nameFile.isEmpty()) {
+            System.err.println("Nenhum arquivo fornecido.");
+            return;
+        }
+
+        Integer retirandoPrefixos = nameFile.indexOf("/01-bronze/") + "/01-bronze/".length();
+        String nomeApenasDoArquivo = nameFile.substring(retirandoPrefixos);
+
+        File diretorioSilver = new File("silver");
+        if (!diretorioSilver.exists()) {
+            diretorioSilver.mkdirs();
+        }
+
+        File arquivoDestino = new File(diretorioSilver, nomeApenasDoArquivo);
+
+        try (
+                BufferedReader reader = new BufferedReader(new FileReader(new File(new File("bronze"), nomeApenasDoArquivo)));
+                BufferedWriter writer = new BufferedWriter(new FileWriter(arquivoDestino))
+        ) {
+
+            String linha;
+            Integer contador = 0;
+
+            while ((linha = reader.readLine()) != null) {
+                if (contador > 0) {
+                    String[] colunas = linha.split(",");
+
+                    // Formatando frequência CPU
+                    colunas[3] = String.format(java.util.Locale.US, "%.2f", Double.parseDouble(colunas[3]) / 1000.0);
+
+                    // Formatando colunas sobre RAM
+                    colunas[5] = String.format(java.util.Locale.US, "%.2f", Double.parseDouble(colunas[5]) / Math.pow(1024, 3));
+                    colunas[6] = String.format(java.util.Locale.US, "%.2f", Double.parseDouble(colunas[6]) / Math.pow(1024, 3));
+
+                    // Formatando coluna de Disco
+                    colunas[8] = String.format(java.util.Locale.US, "%.2f", Double.parseDouble(colunas[8]) / Math.pow(1024, 3));
+
+                    // Formatando dados recebidos e enviados
+                    colunas[11] = String.format(java.util.Locale.US, "%.2f", Double.parseDouble(colunas[11]) / Math.pow(1024, 2));
+                    colunas[12] = String.format(java.util.Locale.US, "%.2f", Double.parseDouble(colunas[12]) / Math.pow(1024, 2));
+
+                    linha = String.join(",", colunas);
+                }
+
+                writer.write(linha);
+                writer.newLine();
+                contador++;
+            }
+
+            System.out.println("Arquivo transformado!");
+
+        } catch (IOException e) {
+            System.err.println("Ocorreu um erro de I/O ao processar os arquivos: " + e.getMessage());
+            e.printStackTrace();
         }
     }
 }
