@@ -154,8 +154,7 @@ public class Bronze2Silver {
             return;
         }
 
-        String fileLocation = pathFile.substring(pathFile.indexOf("01-") + ("01-").length());
-
+        String fileLocation = pathFile.replace("bronze", "silver").substring(pathFile.indexOf("01-") + ("01-").length());
 
         File file = new File(fileLocation);
 
