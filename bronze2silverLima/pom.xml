@@ -61,7 +61,7 @@
             <version>2.3.232</version>
         </dependency>
 
-    <!-- Carregando as depedências para o .env-->
+        <!-- Carregando as depedências para o .env-->
         <dependency>
             <groupId>io.github.cdimascio</groupId>
             <artifactId>dotenv-java</artifactId>

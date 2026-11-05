@@ -2,17 +2,21 @@ package com.noctua.fetching.bucket;
 
 import com.noctua.conection.bucket.S3Provider;
 import io.github.cdimascio.dotenv.Dotenv;
+import org.h2.store.fs.FileUtils;
+import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.core.sync.ResponseTransformer;
 import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.GetObjectRequest;
-import software.amazon.awssdk.services.s3.model.ListObjectsRequest;
-import software.amazon.awssdk.services.s3.model.S3Exception;
-import software.amazon.awssdk.services.s3.model.S3Object;
+import software.amazon.awssdk.services.s3.model.*;
 
 import java.io.*;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.UUID;
+import java.util.stream.Stream;
 
 
 public class Bronze2Silver {
@@ -53,8 +57,8 @@ public class Bronze2Silver {
         return collectedFile;
     }
 
-    public void downloadFile (String nameFile) {
-        if (nameFile == null || nameFile.isEmpty()) {
+    public void downloadFile (String pathFile) {
+        if (pathFile == null || pathFile.isEmpty()) {
             System.err.println("Nenhum arquivo fornecido.");
             return;
         }
@@ -66,11 +70,11 @@ public class Bronze2Silver {
         try {
             GetObjectRequest getObjectRequest = GetObjectRequest.builder()
                     .bucket(bucketName)
-                    .key(nameFile)
+                    .key(pathFile)
                     .build();
 
-            Integer retirandoPrefixos = nameFile.indexOf("/01-bronze/") + "/01-bronze/".length();
-            String nomeApenasDoArquivo = nameFile.substring(retirandoPrefixos);
+            Integer retirandoPrefixos = pathFile.indexOf("/01-bronze/") + "/01-bronze/".length();
+            String nomeApenasDoArquivo = pathFile.substring(retirandoPrefixos);
 
             File diretorioBronze = new File("bronze");
             if (!diretorioBronze.exists()) {
@@ -88,14 +92,14 @@ public class Bronze2Silver {
         }
     }
 
-    public void fileTransformation(String nameFile) {
-        if (nameFile == null || nameFile.isEmpty()) {
+    public void fileTransformation(String pathFile) {
+        if (pathFile == null || pathFile.isEmpty()) {
             System.err.println("Nenhum arquivo fornecido.");
             return;
         }
 
-        Integer retirandoPrefixos = nameFile.indexOf("/01-bronze/") + "/01-bronze/".length();
-        String nomeApenasDoArquivo = nameFile.substring(retirandoPrefixos);
+        Integer retirandoPrefixos = pathFile.indexOf("/01-bronze/") + "/01-bronze/".length();
+        String nomeApenasDoArquivo = pathFile.substring(retirandoPrefixos);
 
         File diretorioSilver = new File("silver");
         if (!diretorioSilver.exists()) {
@@ -143,6 +147,58 @@ public class Bronze2Silver {
         } catch (IOException e) {
             System.err.println("Ocorreu um erro de I/O ao processar os arquivos: " + e.getMessage());
             e.printStackTrace();
+        }
+    }
+
+    public void uploadFile(String pathFile) {
+        if (pathFile == null || pathFile.isEmpty()) {
+            System.err.println("Nenhum arquivo fornecido.");
+            return;
+        }
+
+        String fileLocation = pathFile.substring(pathFile.indexOf("01-") + ("01-").length());
+
+
+        File file = new File(fileLocation);
+
+        String pathS3 = pathFile.replace("01-bronze", "02-silver");
+
+        Dotenv dotenv = Dotenv.load();
+        S3Client s3Client = new S3Provider().getS3Client();
+        String bucketName = dotenv.get("BUCKET_NAME");
+
+        try {
+            PutObjectRequest putObjectRequest = PutObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(pathS3)
+                    .build();
+
+            s3Client.putObject(putObjectRequest, RequestBody.fromFile(file));
+
+            System.out.println("Arquivo enviado com sucesso para a S3 com a chave: " + pathS3);
+
+            List<String> diretoriosParaApagar = List.of("bronze", "silver");
+
+            for (String diretorio : diretoriosParaApagar) {
+                Path caminho = Path.of(diretorio);
+
+                if (Files.exists(caminho)) {
+                    try (Stream<Path> stream = Files.walk(caminho).sorted(Comparator.reverseOrder())) {
+
+                        for (Path p : (Iterable<Path>) stream::iterator) {
+                            Files.delete(p);
+                        }
+
+                    } catch (IOException e) {
+                        System.err.println("Erro ao apagar o diretório: "+ e.getMessage());
+                    }
+                } else {
+                    System.out.println("Aviso: O diretório '" + diretorio + "' não existe na raiz do projeto.");
+                }
+            }
+
+        } catch (S3Exception e) {
+            System.err.println("Erro ao fazer upload do arquivo para a S3: " + e.getMessage());
         }
     }
 }
