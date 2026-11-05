@@ -2,7 +2,6 @@ package com.noctua.fetching.bucket;
 
 import com.noctua.conection.bucket.S3Provider;
 import io.github.cdimascio.dotenv.Dotenv;
-import org.h2.store.fs.FileUtils;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.core.sync.ResponseTransformer;
 import software.amazon.awssdk.services.s3.S3Client;
@@ -12,10 +11,8 @@ import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.UUID;
 import java.util.stream.Stream;
 
 
