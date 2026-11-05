@@ -102,14 +102,16 @@ public class Silver2Gold {
 
         Integer retirandoPrefixos = pathFile.indexOf("/02-silver/") + "/02-silver/".length();
         String apenasArquivo = pathFile.substring(retirandoPrefixos);
+
         String arquivoJsonTotalRegistros = apenasArquivo.replace(".csv", "_todos_registros.json");
+        String arquivoJsonCpuRegistros = apenasArquivo.replace(".csv", "_cpu_registros.json");
+
 
         creatingFullJson(arquivoJsonTotalRegistros, apenasArquivo, diretorioGold);
+        creatingCpuJson(arquivoJsonCpuRegistros, apenasArquivo, diretorioGold);
     }
 
     private void creatingFullJson(String exampleFile, String file, File directory) {
-
-
         File arquivoGold = new File(directory, exampleFile);
 
         try (
@@ -185,5 +187,121 @@ public class Silver2Gold {
             e.printStackTrace();
         }
     }
-    
+    private void creatingCpuJson(String exampleFile, String file, File directory) {
+        File arquivoGold = new File(directory, exampleFile);
+
+        try (
+                BufferedReader reader = new BufferedReader(new FileReader(new File(new File("silver"), file)));
+                BufferedWriter writer = new BufferedWriter(new FileWriter(arquivoGold))
+        ) {
+            String linha;
+            Integer contador = 0;
+            String[] cabecalho = null;
+
+            writer.write("[");
+            writer.write("{");
+            writer.newLine();
+            writer.write("  \"estatisticas\": {");
+            writer.newLine();
+            writer.write("    \"media_cpu_porcentagem\": " + String.format(java.util.Locale.US, "%.2f", calculateAverage(file, 2)) + ",");
+            writer.newLine();
+            writer.write("    \"media_cpu_frenquecia\": " + String.format(java.util.Locale.US, "%.2f", calculateAverage(file, 3)));
+            writer.newLine();
+            writer.write("  },");
+            writer.newLine();
+            writer.write("  \"registros\": [");
+            writer.newLine();
+
+            Boolean primeiraLinha = true;
+
+            while ((linha = reader.readLine()) != null) {
+                if (contador == 0) {
+                    cabecalho = linha.split(",");
+                } else {
+                    String[] colunas = linha.split(",");
+
+                    if (!primeiraLinha) {
+                        writer.write(",");
+                        writer.newLine();
+                    }
+
+                    StringBuilder jsonObject = new StringBuilder();
+
+                    jsonObject.append("  {");
+
+
+                    for (Integer i = 0; i < colunas.length; i++) {
+                        if (i != 2 && i != 3) {
+                            continue;
+                        }
+
+                        String chave;
+                        if (cabecalho != null && i < cabecalho.length) {
+                            chave = cabecalho[i];
+                        } else {
+                            chave = "coluna_" + i;
+                        }
+
+
+                        jsonObject.append("\"").append(chave).append("\":");
+
+                        try {
+                            Double.parseDouble(colunas[i]);
+                            jsonObject.append(colunas[i]);
+                        } catch (NumberFormatException e) {
+                            jsonObject.append("\"").append(colunas[i]).append("\"");
+                        }
+
+                        if (i <= 2) {
+                            jsonObject.append(", ");
+                        }
+                    }
+                    jsonObject.append("}");
+
+                    writer.write(jsonObject.toString());
+                    primeiraLinha = false;
+                }
+                contador++;
+            }
+
+            writer.newLine();
+            writer.write("]");
+
+            System.out.println("Arquivo transformado para JSON com sucesso!");
+
+        } catch (IOException e) {
+            System.err.println("Ocorreu um erro de I/O ao processar os arquivos: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    private Double calculateAverage(String file, Integer columnIndex) {
+        Double soma = 0.0;
+        Integer contador = 0;
+
+        try (BufferedReader reader = new BufferedReader(new FileReader(new File(new File("silver"), file)))) {
+            String linha;
+            Integer linhaAtual = 0;
+
+            while ((linha = reader.readLine()) != null) {
+                if (linhaAtual > 0) {
+                    String[] colunas = linha.split(",");
+                    if (columnIndex < colunas.length) {
+                        try {
+                            Double valor = Double.parseDouble(colunas[columnIndex]);
+                            soma += valor;
+                            contador++;
+                        } catch (NumberFormatException e) {
+                        }
+                    }
+                }
+                linhaAtual++;
+            }
+        } catch (IOException e) {
+            System.err.println("Erro ao ler o arquivo para o cálculo da média: " + e.getMessage());
+        }
+
+        return (soma / contador);
+    }
+
 }
