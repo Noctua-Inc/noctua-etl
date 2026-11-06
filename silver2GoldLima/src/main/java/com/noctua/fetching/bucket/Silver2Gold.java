@@ -2,16 +2,17 @@ package com.noctua.fetching.bucket;
 
 import com.noctua.conection.bucket.S3Provider;
 import io.github.cdimascio.dotenv.Dotenv;
+import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.core.sync.ResponseTransformer;
 import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.GetObjectRequest;
-import software.amazon.awssdk.services.s3.model.ListObjectsRequest;
-import software.amazon.awssdk.services.s3.model.S3Exception;
-import software.amazon.awssdk.services.s3.model.S3Object;
+import software.amazon.awssdk.services.s3.model.*;
 
 import java.io.*;
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.format.DateTimeFormatter;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 
@@ -653,5 +654,57 @@ public class Silver2Gold {
         }
 
         return horarioDoPico;
+    }
+
+    public void uploadFile(String file) {
+        Dotenv dotenv = Dotenv.load();
+        S3Client s3Client = new S3Provider().getS3Client();
+        String bucketName = dotenv.get("BUCKET_NAME");
+
+        File pastaGold = new File("gold");
+
+        String nomeEmpresa = file.substring(0, file.indexOf("/02-silver/"));
+
+        File[] arquivos = pastaGold.listFiles();
+
+        if (arquivos != null) {
+            for (File arquivo : arquivos) {
+                if (arquivo.isFile() && arquivo.getName().toLowerCase().endsWith(".json")) {
+                    String pathS3 = nomeEmpresa + "/03-gold/" + arquivo.getName();
+
+                    try {
+                        PutObjectRequest putObjectRequest = PutObjectRequest.builder()
+                                .bucket(bucketName)
+                                .key(pathS3)
+                                .build();
+
+                        s3Client.putObject(putObjectRequest, RequestBody.fromFile(arquivo));
+                        System.out.println("Enviado com sucesso para: " + pathS3);
+
+                    } catch (S3Exception e) {
+                        System.err.println("Erro ao enviar o arquivo: " + e.getMessage());
+                    }
+                }
+            }
+        }
+
+        List<String> diretoriosParaApagar = List.of("silver", "gold");
+
+        for (String nomeDiretorio : diretoriosParaApagar) {
+            Path caminho = Paths.get(nomeDiretorio);
+
+            if (Files.exists(caminho)) {
+                try {
+                    Files.walk(caminho)
+                            .sorted(Comparator.reverseOrder())
+                            .map(Path::toFile)
+                            .forEach(File::delete);
+
+                    System.out.println("A pasta '" + nomeDiretorio + "' foi apagada.");
+                } catch (IOException e) {
+                    System.err.println("Erro ao apagar a pasta " + nomeDiretorio + ": " + e.getMessage());
+                }
+            }
+        }
     }
 }
