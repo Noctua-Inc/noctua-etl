@@ -132,7 +132,7 @@ public class Silver2Gold {
             writer.newLine();
             writer.write("\t\t\"estatisticas\": {");
             writer.newLine();
-            writer.write("\t\t\t\"horario_pico\": " + "\"" + findPeakTime(file, List.of(2, 4, 7, 9)).trim() + "\"");
+            writer.write("\t\t\t\"horario_pico\": " + "\"" + findPeakTime(file, List.of(2, 4, 7, 11)).trim() + "\"");
             writer.newLine();
             writer.write("\t},");
             writer.newLine();
@@ -305,11 +305,11 @@ public class Silver2Gold {
             writer.newLine();
             writer.write("\t\t\"estatisticas\": {");
             writer.newLine();
-            writer.write("\t\t\t\"horario_pico\": " + "\"" + findPeakTime(file, List.of(4, 9)).trim() + "\"" + ",");
+            writer.write("\t\t\t\"horario_pico\": " + "\"" + findPeakTime(file, List.of(4, 11)).trim() + "\"" + ",");
             writer.newLine();
             writer.write("\t\t\t\"media_ram_porcentagem\": " + String.format(java.util.Locale.US, "%.2f", calculateAverage(file, 4)) + ",");
             writer.newLine();
-            writer.write("\t\t\t\"media_swap_porcentagem\": " + String.format(java.util.Locale.US, "%.2f", calculateAverage(file, 9)) + ",");
+            writer.write("\t\t\t\"media_swap_porcentagem\": " + String.format(java.util.Locale.US, "%.2f", calculateAverage(file, 11)) + ",");
             writer.newLine();
             writer.write("\t\t\t\"media_ram_disponivel\": " + String.format(java.util.Locale.US, "%.2f", calculateAverage(file, 6)));
             writer.newLine();
@@ -339,7 +339,7 @@ public class Silver2Gold {
                     jsonObject.append("\t\t{\n");
 
                     for (Integer i = 0; i < colunas.length; i++) {
-                        if (i != 4 && i != 6 && i != 9) {
+                        if (i != 4 && i != 6 && i != 11) {
                             continue;
                         }
 
@@ -355,7 +355,7 @@ public class Silver2Gold {
                             jsonObject.append("\"").append(colunas[i]).append("\"");
                         }
 
-                        if (i < 9) {
+                        if (i < 11) {
                             jsonObject.append(", \n");
                         }
                     }
@@ -399,15 +399,15 @@ public class Silver2Gold {
             writer.newLine();
             writer.write("\t\t\"estatisticas\": {");
             writer.newLine();
-            writer.write("\t\t\t\"horario_pico\": " + "\"" + findPeakTime(file, List.of(4, 9)).trim() + "\"" + ",");
+            writer.write("\t\t\t\"horario_pico\": " + "\"" + findPeakTime(file, List.of(13, 14)).trim() + "\"" + ",");
             writer.newLine();
-            writer.write("\t\t\t\"media_dados_enviados\": " + String.format(java.util.Locale.US, "%.2f", calculateAverage(file, 11)) + ",");
+            writer.write("\t\t\t\"media_dados_enviados\": " + String.format(java.util.Locale.US, "%.2f", calculateAverage(file, 13)) + ",");
             writer.newLine();
-            writer.write("\t\t\t\"media_dados_recebidos\": " + String.format(java.util.Locale.US, "%.2f", calculateAverage(file, 12)) + ",");
+            writer.write("\t\t\t\"media_dados_recebidos\": " + String.format(java.util.Locale.US, "%.2f", calculateAverage(file, 14)) + ",");
             writer.newLine();
-            writer.write("\t\t\t\"media_dados_perdidos\": " + String.format(java.util.Locale.US, "%.2f", calculateAverage(file, 13)) + ",");
+            writer.write("\t\t\t\"media_dados_perdidos\": " + String.format(java.util.Locale.US, "%.2f", calculateAverage(file, 15)) + ",");
             writer.newLine();
-            writer.write("\t\t\t\"media_sockets_tw\": " + String.format(java.util.Locale.US, "%.0f", calculateAverage(file, 14)));
+            writer.write("\t\t\t\"media_sockets_tw\": " + String.format(java.util.Locale.US, "%.0f", calculateAverage(file, 16)));
             writer.newLine();
             writer.write("\t},");
             writer.newLine();
@@ -435,7 +435,7 @@ public class Silver2Gold {
                     jsonObject.append("\t\t{\n");
 
                     for (Integer i = 0; i < colunas.length; i++) {
-                        if (i != 11 && i != 12 && i != 13 && i != 14) {
+                        if (i != 13 && i != 14 && i != 15 && i != 16) {
                             continue;
                         }
 
@@ -451,7 +451,7 @@ public class Silver2Gold {
                             jsonObject.append("\"").append(colunas[i]).append("\"");
                         }
 
-                        if (i < 14) {
+                        if (i < 16) {
                             jsonObject.append(", \n");
                         }
                     }
@@ -525,7 +525,7 @@ public class Silver2Gold {
                     String[] colunas = linha.split(",");
 
                     try {
-                        String horario = colunas[15];
+                        String horario = colunas[17];
 
                         if(listIndex.size() > 1) {
                             Double soma = 0.0;

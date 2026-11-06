@@ -13,6 +13,7 @@ import java.nio.file.Path;
 import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.stream.Stream;
 
 
@@ -128,9 +129,13 @@ public class Bronze2Silver {
                     // Formatando coluna de Disco
                     colunas[8] = String.format(java.util.Locale.US, "%.2f", Double.parseDouble(colunas[8]) / Math.pow(1024, 3));
 
+                    // Formatando coluna de Requisição de Disco
+                    colunas[9] = String.format(new Locale("pt", "BR"), "%,d", Long.parseLong(colunas[9]));
+                    colunas[10] = String.format(new Locale("pt", "BR"), "%,d", Long.parseLong(colunas[10]));
+
                     // Formatando dados recebidos e enviados
-                    colunas[11] = String.format(java.util.Locale.US, "%.2f", Double.parseDouble(colunas[11]) / Math.pow(1024, 2));
-                    colunas[12] = String.format(java.util.Locale.US, "%.2f", Double.parseDouble(colunas[12]) / Math.pow(1024, 2));
+                    colunas[13] = String.format(java.util.Locale.US, "%.2f", Double.parseDouble(colunas[13]) / Math.pow(1024, 2));
+                    colunas[14] = String.format(java.util.Locale.US, "%.2f", Double.parseDouble(colunas[14]) / Math.pow(1024, 2));
 
                     linha = String.join(",", colunas);
                 }
