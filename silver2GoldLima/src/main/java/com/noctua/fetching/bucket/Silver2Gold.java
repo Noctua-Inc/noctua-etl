@@ -106,11 +106,13 @@ public class Silver2Gold {
         String arquivoJsonTotalRegistros = apenasArquivo.replace(".csv", "_todos_registros.json");
         String arquivoJsonCpuRegistros = apenasArquivo.replace(".csv", "_cpu_registros.json");
         String arquivoJsonRamRegistros = apenasArquivo.replace(".csv", "_ram_registros.json");
+        String arquivoJsonRedeRegistros = apenasArquivo.replace(".csv", "_rede_registros.json");
 
 
         creatingFullJson(arquivoJsonTotalRegistros, apenasArquivo, diretorioGold);
         creatingCpuJson(arquivoJsonCpuRegistros, apenasArquivo, diretorioGold);
         creatingRamJson(arquivoJsonRamRegistros, apenasArquivo, diretorioGold);
+        creatingNetworkJson(arquivoJsonRedeRegistros, apenasArquivo, diretorioGold);
     }
 
     private void creatingFullJson(String exampleFile, String file, File directory) {
@@ -379,6 +381,103 @@ public class Silver2Gold {
             e.printStackTrace();
         }
     }
+
+    private void creatingNetworkJson(String exampleFile, String file, File directory) {
+        File arquivoGold = new File(directory, exampleFile);
+
+        try (
+                BufferedReader reader = new BufferedReader(new FileReader(new File(new File("silver"), file)));
+                BufferedWriter writer = new BufferedWriter(new FileWriter(arquivoGold))
+        ) {
+            String linha;
+            Integer contador = 0;
+            String[] cabecalho = null;
+
+            writer.write("[");
+            writer.newLine();
+            writer.write("  {");
+            writer.newLine();
+            writer.write("\t\t\"estatisticas\": {");
+            writer.newLine();
+            writer.write("\t\t\t\"horario_pico\": " + "\"" + findPeakTime(file, List.of(4, 9)).trim() + "\"" + ",");
+            writer.newLine();
+            writer.write("\t\t\t\"media_dados_enviados\": " + String.format(java.util.Locale.US, "%.2f", calculateAverage(file, 11)) + ",");
+            writer.newLine();
+            writer.write("\t\t\t\"media_dados_recebidos\": " + String.format(java.util.Locale.US, "%.2f", calculateAverage(file, 12)) + ",");
+            writer.newLine();
+            writer.write("\t\t\t\"media_dados_perdidos\": " + String.format(java.util.Locale.US, "%.2f", calculateAverage(file, 13)) + ",");
+            writer.newLine();
+            writer.write("\t\t\t\"media_sockets_tw\": " + String.format(java.util.Locale.US, "%.0f", calculateAverage(file, 14)));
+            writer.newLine();
+            writer.write("\t},");
+            writer.newLine();
+            writer.write("\t\"registros\": [");
+            writer.newLine();
+
+            Boolean primeiraLinha = true;
+
+            while ((linha = reader.readLine()) != null) {
+                Double total_ram = 0.0;
+                Double ram_disponivel = 0.0;
+
+                if (contador == 0) {
+                    cabecalho = linha.split(",");
+                } else {
+                    String[] colunas = linha.split(",");
+
+                    if (!primeiraLinha) {
+                        writer.write(",");
+                        writer.newLine();
+                    }
+
+                    StringBuilder jsonObject = new StringBuilder();
+
+                    jsonObject.append("\t\t{\n");
+
+                    for (Integer i = 0; i < colunas.length; i++) {
+                        if (i != 11 && i != 12 && i != 13 && i != 14) {
+                            continue;
+                        }
+
+
+                        String chave = cabecalho[i];
+
+                        jsonObject.append("\t\t\t\"").append(chave).append("\":");
+
+                        try {
+                            Double.parseDouble(colunas[i]);
+                            jsonObject.append(colunas[i]);
+                        } catch (NumberFormatException e) {
+                            jsonObject.append("\"").append(colunas[i]).append("\"");
+                        }
+
+                        if (i < 14) {
+                            jsonObject.append(", \n");
+                        }
+                    }
+                    jsonObject.append("\n\t\t}");
+
+                    writer.write(jsonObject.toString());
+                    primeiraLinha = false;
+                }
+                contador++;
+            }
+
+            writer.newLine();
+            writer.write("\t]");
+            writer.newLine();
+            writer.write("  }");
+            writer.newLine();
+            writer.write("]");
+
+            System.out.println("Arquivo transformado para JSON com sucesso!");
+
+        } catch (IOException e) {
+            System.err.println("Ocorreu um erro de I/O ao processar os arquivos: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
 
     private Double calculateAverage(String file, Integer columnIndex) {
         Double soma = 0.0;
