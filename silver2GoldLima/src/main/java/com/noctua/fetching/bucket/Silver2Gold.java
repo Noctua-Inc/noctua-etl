@@ -13,6 +13,7 @@ import java.io.*;
 import java.nio.file.Files;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Locale;
 
 public class Silver2Gold {
     DateTimeFormatter formato = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH:mm");
@@ -107,12 +108,14 @@ public class Silver2Gold {
         String arquivoJsonCpuRegistros = apenasArquivo.replace(".csv", "_cpu_registros.json");
         String arquivoJsonRamRegistros = apenasArquivo.replace(".csv", "_ram_registros.json");
         String arquivoJsonRedeRegistros = apenasArquivo.replace(".csv", "_rede_registros.json");
+        String arquivoJsonDiscoRegistros = apenasArquivo.replace(".csv", "_disco_registros.json");
 
 
         creatingFullJson(arquivoJsonTotalRegistros, apenasArquivo, diretorioGold);
         creatingCpuJson(arquivoJsonCpuRegistros, apenasArquivo, diretorioGold);
         creatingRamJson(arquivoJsonRamRegistros, apenasArquivo, diretorioGold);
         creatingNetworkJson(arquivoJsonRedeRegistros, apenasArquivo, diretorioGold);
+        creatingDiskJson(arquivoJsonDiscoRegistros, apenasArquivo, diretorioGold);
     }
 
     private void creatingFullJson(String exampleFile, String file, File directory) {
@@ -191,7 +194,7 @@ public class Silver2Gold {
             writer.newLine();
             writer.write("]");
 
-            System.out.println("Arquivo transformado para JSON com sucesso!");
+            System.out.println("Registros totais transformado para JSON com sucesso!");
 
         } catch (IOException e) {
             System.err.println("Ocorreu um erro de I/O ao processar os arquivos: " + e.getMessage());
@@ -280,7 +283,7 @@ public class Silver2Gold {
             writer.newLine();
             writer.write("]");
 
-            System.out.println("Arquivo transformado para JSON com sucesso!");
+            System.out.println("Registros de CPU transformado para JSON com sucesso!");
 
         } catch (IOException e) {
             System.err.println("Ocorreu um erro de I/O ao processar os arquivos: " + e.getMessage());
@@ -374,7 +377,7 @@ public class Silver2Gold {
             writer.newLine();
             writer.write("]");
 
-            System.out.println("Arquivo transformado para JSON com sucesso!");
+            System.out.println("Registros RAM transformado para JSON com sucesso!");
 
         } catch (IOException e) {
             System.err.println("Ocorreu um erro de I/O ao processar os arquivos: " + e.getMessage());
@@ -470,7 +473,7 @@ public class Silver2Gold {
             writer.newLine();
             writer.write("]");
 
-            System.out.println("Arquivo transformado para JSON com sucesso!");
+            System.out.println("Registros rede transformado para JSON com sucesso!");
 
         } catch (IOException e) {
             System.err.println("Ocorreu um erro de I/O ao processar os arquivos: " + e.getMessage());
@@ -478,6 +481,103 @@ public class Silver2Gold {
         }
     }
 
+    private void creatingDiskJson(String exampleFile, String file, File directory) {
+        File arquivoGold = new File(directory, exampleFile);
+
+        try (
+                BufferedReader reader = new BufferedReader(new FileReader(new File(new File("silver"), file)));
+                BufferedWriter writer = new BufferedWriter(new FileWriter(arquivoGold))
+        ) {
+            String linha;
+            Integer contador = 0;
+            String[] cabecalho = null;
+
+            Long mediaEscrita = Math.round(calculateAverage(file, 9));
+            Long mediaLeitura = Math.round(calculateAverage(file, 10));
+
+            writer.write("[");
+            writer.newLine();
+            writer.write("  {");
+            writer.newLine();
+            writer.write("\t\t\"estatisticas\": {");
+            writer.newLine();
+            writer.write("\t\t\t\"horario_pico\": " + "\"" + findPeakTime(file, List.of(13, 14)).trim() + "\"" + ",");
+            writer.newLine();
+            writer.write("\t\t\t\"media_disco_porcentagem\": " + String.format(java.util.Locale.US, "%.2f", calculateAverage(file, 7)) + ",");
+            writer.newLine();
+            writer.write("\t\t\t\"media_disco_disponivel\": " + String.format(java.util.Locale.US, "%.2f", calculateAverage(file, 8)) + ",");
+            writer.newLine();
+            writer.write("\t\t\t\"media_qtd_requisicao_escrita\": \"" + String.format(new Locale("pt", "BR"), "%,d", mediaEscrita) + "\",");
+            writer.newLine();
+            writer.write("\t\t\t\"media_qtd_requisicao_leitura\": \"" + String.format(new Locale("pt", "BR"), "%,d", mediaLeitura) + "\"");writer.newLine();
+            writer.write("\t},");
+            writer.newLine();
+            writer.write("\t\"registros\": [");
+            writer.newLine();
+
+            Boolean primeiraLinha = true;
+
+            while ((linha = reader.readLine()) != null) {
+                Double total_ram = 0.0;
+                Double ram_disponivel = 0.0;
+
+                if (contador == 0) {
+                    cabecalho = linha.split(",");
+                } else {
+                    String[] colunas = linha.split(",");
+
+                    if (!primeiraLinha) {
+                        writer.write(",");
+                        writer.newLine();
+                    }
+
+                    StringBuilder jsonObject = new StringBuilder();
+
+                    jsonObject.append("\t\t{\n");
+
+                    for (Integer i = 0; i < colunas.length; i++) {
+                        if (i != 7 && i != 8 && i != 9 && i != 10) {
+                            continue;
+                        }
+
+
+                        String chave = cabecalho[i];
+
+                        jsonObject.append("\t\t\t\"").append(chave).append("\":");
+
+                        try {
+                            Double.parseDouble(colunas[i]);
+                            jsonObject.append(colunas[i]);
+                        } catch (NumberFormatException e) {
+                            jsonObject.append("\"").append(colunas[i]).append("\"");
+                        }
+
+                        if (i < 10) {
+                            jsonObject.append(", \n");
+                        }
+                    }
+                    jsonObject.append("\n\t\t}");
+
+                    writer.write(jsonObject.toString());
+                    primeiraLinha = false;
+                }
+                contador++;
+            }
+
+            writer.newLine();
+            writer.write("\t]");
+            writer.newLine();
+            writer.write("  }");
+            writer.newLine();
+            writer.write("]");
+
+            System.out.println("Registros disco transformado para JSON com sucesso!");
+
+        } catch (IOException e) {
+            System.err.println("Ocorreu um erro de I/O ao processar os arquivos: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
 
     private Double calculateAverage(String file, Integer columnIndex) {
         Double soma = 0.0;
