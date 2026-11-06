@@ -307,7 +307,9 @@ public class Silver2Gold {
             writer.newLine();
             writer.write("\t\t\t\"media_ram_porcentagem\": " + String.format(java.util.Locale.US, "%.2f", calculateAverage(file, 4)) + ",");
             writer.newLine();
-            writer.write("\t\t\t\"media_swap_porcentagem\": " + String.format(java.util.Locale.US, "%.2f", calculateAverage(file, 9)));
+            writer.write("\t\t\t\"media_swap_porcentagem\": " + String.format(java.util.Locale.US, "%.2f", calculateAverage(file, 9)) + ",");
+            writer.newLine();
+            writer.write("\t\t\t\"media_ram_disponivel\": " + String.format(java.util.Locale.US, "%.2f", calculateAverage(file, 6)));
             writer.newLine();
             writer.write("\t},");
             writer.newLine();
