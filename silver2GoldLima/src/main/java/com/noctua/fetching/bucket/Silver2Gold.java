@@ -105,10 +105,12 @@ public class Silver2Gold {
 
         String arquivoJsonTotalRegistros = apenasArquivo.replace(".csv", "_todos_registros.json");
         String arquivoJsonCpuRegistros = apenasArquivo.replace(".csv", "_cpu_registros.json");
+        String arquivoJsonRamRegistros = apenasArquivo.replace(".csv", "_ram_registros.json");
 
 
         creatingFullJson(arquivoJsonTotalRegistros, apenasArquivo, diretorioGold);
         creatingCpuJson(arquivoJsonCpuRegistros, apenasArquivo, diretorioGold);
+        creatingRamJson(arquivoJsonRamRegistros, apenasArquivo, diretorioGold);
     }
 
     private void creatingFullJson(String exampleFile, String file, File directory) {
@@ -124,6 +126,16 @@ public class Silver2Gold {
 
             writer.write("[");
             writer.newLine();
+            writer.write("  {");
+            writer.newLine();
+            writer.write("\t\t\"estatisticas\": {");
+            writer.newLine();
+            writer.write("\t\t\t\"horario_pico\": " + "\"" + findPeakTime(file, List.of(2, 4, 7, 9)).trim() + "\"");
+            writer.newLine();
+            writer.write("\t},");
+            writer.newLine();
+            writer.write("\t\"registros\": [");
+            writer.newLine();
 
             Boolean primeiraLinha = true;
 
@@ -140,23 +152,16 @@ public class Silver2Gold {
 
                     StringBuilder jsonObject = new StringBuilder();
 
-                    jsonObject.append("  {");
-
+                    jsonObject.append("\t\t{\n");
 
                     for (Integer i = 0; i < colunas.length; i++) {
-                        if (i == 0 || i == 1) {
+                        if (i == 0 || i == 1 || i == 5) {
                             continue;
                         }
 
-                        String chave;
-                        if (cabecalho != null && i < cabecalho.length) {
-                            chave = cabecalho[i];
-                        } else {
-                            chave = "coluna_" + i;
-                        }
+                        String chave = cabecalho[i];
 
-
-                        jsonObject.append("\"").append(chave).append("\":");
+                        jsonObject.append("\t\t\t\"").append(chave).append("\":");
 
                         try {
                             Double.parseDouble(colunas[i]);
@@ -166,10 +171,10 @@ public class Silver2Gold {
                         }
 
                         if (i < colunas.length - 1) {
-                            jsonObject.append(", ");
+                            jsonObject.append(", \n");
                         }
                     }
-                    jsonObject.append("}");
+                    jsonObject.append("\n\t\t}");
 
                     writer.write(jsonObject.toString());
                     primeiraLinha = false;
@@ -177,6 +182,10 @@ public class Silver2Gold {
                 contador++;
             }
 
+            writer.newLine();
+            writer.write("\t]");
+            writer.newLine();
+            writer.write("  }");
             writer.newLine();
             writer.write("]");
 
@@ -187,6 +196,7 @@ public class Silver2Gold {
             e.printStackTrace();
         }
     }
+
     private void creatingCpuJson(String exampleFile, String file, File directory) {
         File arquivoGold = new File(directory, exampleFile);
 
@@ -199,17 +209,20 @@ public class Silver2Gold {
             String[] cabecalho = null;
 
             writer.write("[");
-            writer.write("{");
             writer.newLine();
-            writer.write("  \"estatisticas\": {");
+            writer.write("  {");
             writer.newLine();
-            writer.write("    \"media_cpu_porcentagem\": " + String.format(java.util.Locale.US, "%.2f", calculateAverage(file, 2)) + ",");
+            writer.write("\t\t\"estatisticas\": {");
             writer.newLine();
-            writer.write("    \"media_cpu_frenquecia\": " + String.format(java.util.Locale.US, "%.2f", calculateAverage(file, 3)));
+            writer.write("\t\t\t\"horario_pico\": " + "\"" + findPeakTime(file, List.of(2)).trim() + "\"" + ",");
             writer.newLine();
-            writer.write("  },");
+            writer.write("\t\t\t\"media_cpu_porcentagem\": " + String.format(java.util.Locale.US, "%.2f", calculateAverage(file, 2)) + ",");
             writer.newLine();
-            writer.write("  \"registros\": [");
+            writer.write("\t\t\t\"media_cpu_frenquecia\": " + String.format(java.util.Locale.US, "%.2f", calculateAverage(file, 3)));
+            writer.newLine();
+            writer.write("\t},");
+            writer.newLine();
+            writer.write("\t\"registros\": [");
             writer.newLine();
 
             Boolean primeiraLinha = true;
@@ -227,7 +240,7 @@ public class Silver2Gold {
 
                     StringBuilder jsonObject = new StringBuilder();
 
-                    jsonObject.append("  {");
+                    jsonObject.append("\t\t{\n");
 
 
                     for (Integer i = 0; i < colunas.length; i++) {
@@ -235,15 +248,9 @@ public class Silver2Gold {
                             continue;
                         }
 
-                        String chave;
-                        if (cabecalho != null && i < cabecalho.length) {
-                            chave = cabecalho[i];
-                        } else {
-                            chave = "coluna_" + i;
-                        }
+                        String chave = cabecalho[i];
 
-
-                        jsonObject.append("\"").append(chave).append("\":");
+                        jsonObject.append("\t\t\t\"").append(chave).append("\":");
 
                         try {
                             Double.parseDouble(colunas[i]);
@@ -253,10 +260,10 @@ public class Silver2Gold {
                         }
 
                         if (i <= 2) {
-                            jsonObject.append(", ");
+                            jsonObject.append(", \n");
                         }
                     }
-                    jsonObject.append("}");
+                    jsonObject.append("\n\t\t}");
 
                     writer.write(jsonObject.toString());
                     primeiraLinha = false;
@@ -264,6 +271,102 @@ public class Silver2Gold {
                 contador++;
             }
 
+            writer.newLine();
+            writer.write("\t]");
+            writer.newLine();
+            writer.write("  }");
+            writer.newLine();
+            writer.write("]");
+
+            System.out.println("Arquivo transformado para JSON com sucesso!");
+
+        } catch (IOException e) {
+            System.err.println("Ocorreu um erro de I/O ao processar os arquivos: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    private void creatingRamJson(String exampleFile, String file, File directory) {
+        File arquivoGold = new File(directory, exampleFile);
+
+        try (
+                BufferedReader reader = new BufferedReader(new FileReader(new File(new File("silver"), file)));
+                BufferedWriter writer = new BufferedWriter(new FileWriter(arquivoGold))
+        ) {
+            String linha;
+            Integer contador = 0;
+            String[] cabecalho = null;
+
+            writer.write("[");
+            writer.newLine();
+            writer.write("  {");
+            writer.newLine();
+            writer.write("\t\t\"estatisticas\": {");
+            writer.newLine();
+            writer.write("\t\t\t\"horario_pico\": " + "\"" + findPeakTime(file, List.of(4, 9)).trim() + "\"" + ",");
+            writer.newLine();
+            writer.write("\t\t\t\"media_ram_porcentagem\": " + String.format(java.util.Locale.US, "%.2f", calculateAverage(file, 4)) + ",");
+            writer.newLine();
+            writer.write("\t\t\t\"media_swap_porcentagem\": " + String.format(java.util.Locale.US, "%.2f", calculateAverage(file, 9)));
+            writer.newLine();
+            writer.write("\t},");
+            writer.newLine();
+            writer.write("\t\"registros\": [");
+            writer.newLine();
+
+            Boolean primeiraLinha = true;
+
+            while ((linha = reader.readLine()) != null) {
+                Double total_ram = 0.0;
+                Double ram_disponivel = 0.0;
+
+                if (contador == 0) {
+                    cabecalho = linha.split(",");
+                } else {
+                    String[] colunas = linha.split(",");
+
+                    if (!primeiraLinha) {
+                        writer.write(",");
+                        writer.newLine();
+                    }
+
+                    StringBuilder jsonObject = new StringBuilder();
+
+                    jsonObject.append("\t\t{\n");
+
+                    for (Integer i = 0; i < colunas.length; i++) {
+                        if (i != 4 && i != 6 && i != 9) {
+                            continue;
+                        }
+
+
+                        String chave = cabecalho[i];
+
+                        jsonObject.append("\t\t\t\"").append(chave).append("\":");
+
+                        try {
+                            Double.parseDouble(colunas[i]);
+                            jsonObject.append(colunas[i]);
+                        } catch (NumberFormatException e) {
+                            jsonObject.append("\"").append(colunas[i]).append("\"");
+                        }
+
+                        if (i < 9) {
+                            jsonObject.append(", \n");
+                        }
+                    }
+                    jsonObject.append("\n\t\t}");
+
+                    writer.write(jsonObject.toString());
+                    primeiraLinha = false;
+                }
+                contador++;
+            }
+
+            writer.newLine();
+            writer.write("\t]");
+            writer.newLine();
+            writer.write("  }");
             writer.newLine();
             writer.write("]");
 
@@ -304,4 +407,50 @@ public class Silver2Gold {
         return (soma / contador);
     }
 
+    private String findPeakTime(String file, List<Integer> listIndex) {
+        Double maiorValor = -1.0;
+        String horarioDoPico = "Nenhum registro encontrado";
+        Integer linhaAtual = 0;
+
+        try (
+                BufferedReader reader = new BufferedReader(new FileReader(new File(new File("silver"), file)))
+        ) {
+            String linha;
+
+            while ((linha = reader.readLine()) != null) {
+                Double valorAtual = 0.0;
+
+                if (linhaAtual > 0) {
+                    String[] colunas = linha.split(",");
+
+                    try {
+                        String horario = colunas[15];
+
+                        if(listIndex.size() > 1) {
+                            Double soma = 0.0;
+                            for(Integer i = 0; i < listIndex.size(); i++) {
+                                soma += Double.parseDouble(colunas[listIndex.get(i)]);
+
+                                valorAtual = soma / (listIndex.size());
+                            }
+                        } else {
+                            valorAtual = Double.parseDouble(colunas[listIndex.getFirst()]);
+                        }
+
+                        if (valorAtual > maiorValor) {
+                            maiorValor = valorAtual;
+                            horarioDoPico = horario.substring(horario.indexOf(" "));
+                        }
+
+                    } catch (NumberFormatException e) {
+                    }
+                }
+                linhaAtual++;
+            }
+        } catch (IOException e) {
+            System.err.println("Erro ao ler o arquivo para encontrar o pico: " + e.getMessage());
+        }
+
+        return horarioDoPico;
+    }
 }
