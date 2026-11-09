@@ -112,37 +112,39 @@ public class Bronze2Silver {
                 BufferedWriter writer = new BufferedWriter(new FileWriter(arquivoDestino))
         ) {
 
+            String primeiraLinha = reader.readLine();
+
+            String[] cabecalho = primeiraLinha.split(",", -1);
+            writer.write(primeiraLinha);
+            writer.newLine();
+
             String linha;
-            Integer contador = 0;
-
             while ((linha = reader.readLine()) != null) {
-                if (contador > 0) {
-                    String[] colunas = linha.split(",");
+                String[] valores = linha.split(",", -1);
 
-                    // Formatando frequência CPU
-                    colunas[3] = String.format(java.util.Locale.US, "%.2f", Double.parseDouble(colunas[3]) / 1000.0);
+                for (int i = 0; i < cabecalho.length; i++) {
+                    String coluna = cabecalho[i];
+                    double divisor = 1;
 
-                    // Formatando colunas sobre RAM
-                    colunas[5] = String.format(java.util.Locale.US, "%.2f", Double.parseDouble(colunas[5]) / Math.pow(1024, 3));
-                    colunas[6] = String.format(java.util.Locale.US, "%.2f", Double.parseDouble(colunas[6]) / Math.pow(1024, 3));
+                    if (coluna.equals("Freq_CPU")) {
+                        divisor = 1000.0;
+                    } else if (coluna.equals("Total_RAM")
+                            || coluna.equals("Disponivel_RAM")
+                            || coluna.equals("Disponivel_Disco")) {
+                        divisor = Math.pow(1024, 3);
+                    } else if (coluna.equals("Dados_Enviados")
+                            || coluna.equals("Dados_Recebidos")) {
+                        divisor = Math.pow(1024, 2);
+                    }
 
-                    // Formatando coluna de Disco
-                    colunas[8] = String.format(java.util.Locale.US, "%.2f", Double.parseDouble(colunas[8]) / Math.pow(1024, 3));
-
-                    // Formatando coluna de Requisição de Disco
-                    colunas[9] = String.format(new Locale("pt", "BR"), "%,d", Long.parseLong(colunas[9]));
-                    colunas[10] = String.format(new Locale("pt", "BR"), "%,d", Long.parseLong(colunas[10]));
-
-                    // Formatando dados recebidos e enviados
-                    colunas[13] = String.format(java.util.Locale.US, "%.2f", Double.parseDouble(colunas[13]) / Math.pow(1024, 2));
-                    colunas[14] = String.format(java.util.Locale.US, "%.2f", Double.parseDouble(colunas[14]) / Math.pow(1024, 2));
-
-                    linha = String.join(",", colunas);
+                    if (divisor != 1) {
+                        double valor = Double.parseDouble(valores[i]);
+                        valores[i] = String.format(Locale.US, "%.2f", valor / divisor);
+                    }
                 }
 
-                writer.write(linha);
+                writer.write(String.join(",", valores));
                 writer.newLine();
-                contador++;
             }
 
             System.out.println("Arquivo transformado!");
@@ -170,12 +172,33 @@ public class Bronze2Silver {
         String bucketName = dotenv.get("BUCKET_NAME");
 
         try {
+            HistoricoCsv historico = new HistoricoCsv();
+            String hostname = historico.hostname(file.toPath());
+            String prefixo = pathS3.substring(0, pathS3.indexOf("/02-silver/") + "/02-silver/".length());
+            String caminhoHistorico = prefixo + hostname + "_historico.csv";
+            Path historicoAnterior = Path.of("silver", hostname + "_historico_anterior.csv");
+            Path historicoAtualizado = Path.of("silver", hostname + "_historico.csv");
+
+            Files.deleteIfExists(historicoAnterior);
+            try (InputStream entrada = s3Client.getObject(GetObjectRequest.builder()
+                    .bucket(bucketName).key(caminhoHistorico).build())) {
+                Files.copy(entrada, historicoAnterior);
+            } catch (NoSuchKeyException e) {
+                System.out.println("Primeiro histórico desta mainframe.");
+            }
+
+            historico.atualizar(historicoAnterior, file.toPath(), historicoAtualizado);
+            s3Client.putObject(PutObjectRequest.builder()
+                            .bucket(bucketName).key(caminhoHistorico).build(),
+                    RequestBody.fromFile(historicoAtualizado));
+
             PutObjectRequest putObjectRequest = PutObjectRequest.builder()
                     .bucket(bucketName)
                     .key(pathS3)
                     .build();
 
             s3Client.putObject(putObjectRequest, RequestBody.fromFile(file));
+            apagarLotesAnteriores(s3Client, bucketName, prefixo, hostname, pathS3);
 
             System.out.println("Arquivo enviado com sucesso para a S3 com a chave: " + pathS3);
 
@@ -199,8 +222,29 @@ public class Bronze2Silver {
                 }
             }
 
-        } catch (S3Exception e) {
+        } catch (IOException | S3Exception e) {
             System.err.println("Erro ao fazer upload do arquivo para a S3: " + e.getMessage());
+        }
+    }
+
+    private void apagarLotesAnteriores(S3Client s3, String bucket, String prefixo,
+                                      String hostname, String chaveAtual) {
+        String prefixoMainframe = prefixo + hostname + "_";
+        ListObjectsV2Request requisicao = ListObjectsV2Request.builder()
+                .bucket(bucket).prefix(prefixoMainframe).build();
+
+        for (ListObjectsV2Response pagina : s3.listObjectsV2Paginator(requisicao)) {
+            for (S3Object objeto : pagina.contents()) {
+                String chave = objeto.key();
+                String finalNome = chave.substring(prefixoMainframe.length());
+                // Reconhece apenas a data do lote, sem atingir históricos ou processos.
+                boolean loteDatado = finalNome.matches("\\d{4}-\\d{2}-\\d{2}_\\d{2}-\\d{2}\\.csv");
+                boolean loteAnterior = loteDatado && chave.compareTo(chaveAtual) < 0;
+
+                if (loteAnterior) {
+                    s3.deleteObject(DeleteObjectRequest.builder().bucket(bucket).key(chave).build());
+                }
+            }
         }
     }
 }
