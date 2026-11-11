@@ -22,7 +22,7 @@ public class Previsoes {
         String[] partes = chave.split("/", -1);
         String sufixo = "_historico.csv";
         String prefixoEmpresa = partes[0];
-        String nomeArquivo = partes[2];
+        String nomeArquivo = partes[partes.length - 1];
         String hostname = nomeArquivo.substring(0, nomeArquivo.length() - sufixo.length());
 
         consultarLimites(prefixoEmpresa, hostname);

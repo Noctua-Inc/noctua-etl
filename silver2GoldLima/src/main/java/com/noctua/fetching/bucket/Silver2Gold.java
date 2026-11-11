@@ -11,6 +11,7 @@ import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.Instant;
 import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
 import java.util.List;
@@ -33,18 +34,21 @@ public class Silver2Gold {
         String collectedFile = null;
 
         try {
-            ListObjectsRequest requisicao = ListObjectsRequest.builder()
+            ListObjectsV2Request requisicao = ListObjectsV2Request.builder()
                     .bucket(bucketName)
                     .build();
 
-            List<S3Object> objects = s3Client.listObjects(requisicao).contents();
-            for (S3Object object : objects) {
-                if (object.key().contains("csv")
+            Instant maisRecente = Instant.MIN;
+            for (S3Object object : s3Client.listObjectsV2Paginator(requisicao).contents()) {
+                if (object.key().endsWith(".csv")
                         && object.key().contains("/02-silver/")
                         && !object.key().contains("processos")
+                        && !object.key().endsWith("_historico.csv")
+                        && object.lastModified().isAfter(maisRecente)
 //                        && object.key().contains(LocalDateTime.now().format(formato))
                 ) {
                     collectedFile = object.key();
+                    maisRecente = object.lastModified();
                 }
             }
         } catch (
@@ -71,8 +75,7 @@ public class Silver2Gold {
                     .key(pathFile)
                     .build();
 
-            Integer retirandoPrefixos = pathFile.indexOf("/02-silver/") + "/02-silver/".length();
-            String nomeApenasDoArquivo = pathFile.substring(retirandoPrefixos);
+            String nomeApenasDoArquivo = pathFile.substring(pathFile.lastIndexOf('/') + 1);
 
             File diretorioSilver = new File("silver");
             if (!diretorioSilver.exists()) {
@@ -102,8 +105,7 @@ public class Silver2Gold {
             diretorioGold.mkdir();
         }
 
-        Integer retirandoPrefixos = pathFile.indexOf("/02-silver/") + "/02-silver/".length();
-        String apenasArquivo = pathFile.substring(retirandoPrefixos);
+        String apenasArquivo = pathFile.substring(pathFile.lastIndexOf('/') + 1);
 
         String arquivoJsonTotalRegistros = apenasArquivo.replace(".csv", "_todos_registros.json");
         String arquivoJsonCpuRegistros = apenasArquivo.replace(".csv", "_cpu_registros.json");

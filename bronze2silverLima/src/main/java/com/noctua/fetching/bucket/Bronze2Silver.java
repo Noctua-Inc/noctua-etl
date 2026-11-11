@@ -10,6 +10,7 @@ import software.amazon.awssdk.services.s3.model.*;
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
 import java.util.List;
@@ -34,18 +35,20 @@ public class Bronze2Silver {
         String collectedFile = null;
 
         try {
-            ListObjectsRequest requisicao = ListObjectsRequest.builder()
+            ListObjectsV2Request requisicao = ListObjectsV2Request.builder()
                     .bucket(bucketName)
                     .build();
 
-            List<S3Object> objects = s3Client.listObjects(requisicao).contents();
-            for (S3Object object : objects) {
-                if (object.key().contains("csv")
+            Instant maisRecente = Instant.MIN;
+            for (S3Object object : s3Client.listObjectsV2Paginator(requisicao).contents()) {
+                if (object.key().endsWith(".csv")
                         && object.key().contains("/01-bronze/")
-                        && !object.key().contains("processos")
+                        && !object.key().contains("_processos_")
+                        && object.lastModified().isAfter(maisRecente)
 //                        && object.key().contains(LocalDateTime.now().format(formato))
                 ) {
                     collectedFile = object.key();
+                    maisRecente = object.lastModified();
                 }
             }
         } catch (
@@ -72,8 +75,7 @@ public class Bronze2Silver {
                     .key(pathFile)
                     .build();
 
-            Integer retirandoPrefixos = pathFile.indexOf("/01-bronze/") + "/01-bronze/".length();
-            String nomeApenasDoArquivo = pathFile.substring(retirandoPrefixos);
+            String nomeApenasDoArquivo = pathFile.substring(pathFile.lastIndexOf('/') + 1);
 
             File diretorioBronze = new File("bronze");
             if (!diretorioBronze.exists()) {
@@ -97,8 +99,7 @@ public class Bronze2Silver {
             return;
         }
 
-        Integer retirandoPrefixos = pathFile.indexOf("/01-bronze/") + "/01-bronze/".length();
-        String nomeApenasDoArquivo = pathFile.substring(retirandoPrefixos);
+        String nomeApenasDoArquivo = pathFile.substring(pathFile.lastIndexOf('/') + 1);
 
         File diretorioSilver = new File("silver");
         if (!diretorioSilver.exists()) {
@@ -161,11 +162,9 @@ public class Bronze2Silver {
             return;
         }
 
-        String fileLocation = pathFile.replace("bronze", "silver").substring(pathFile.indexOf("01-") + ("01-").length());
-
-        File file = new File(fileLocation);
-
-        String pathS3 = pathFile.replace("01-bronze", "02-silver");
+        String nomeArquivo = pathFile.substring(pathFile.lastIndexOf('/') + 1);
+        File file = new File("silver", nomeArquivo);
+        String empresa = pathFile.substring(0, pathFile.indexOf("/01-bronze/"));
 
         Dotenv dotenv = Dotenv.load();
         S3Client s3Client = new S3Provider().getS3Client();
@@ -174,16 +173,16 @@ public class Bronze2Silver {
         try {
             HistoricoCsv historico = new HistoricoCsv();
             String hostname = historico.hostname(file.toPath());
-            String prefixo = pathS3.substring(0, pathS3.indexOf("/02-silver/") + "/02-silver/".length());
+            String prefixoSilver = empresa + "/02-silver/";
+            String prefixo = prefixoSilver + hostname + "/";
+            String pathS3 = prefixo + nomeArquivo;
             String caminhoHistorico = prefixo + hostname + "_historico.csv";
             Path historicoAnterior = Path.of("silver", hostname + "_historico_anterior.csv");
             Path historicoAtualizado = Path.of("silver", hostname + "_historico.csv");
 
             Files.deleteIfExists(historicoAnterior);
-            try (InputStream entrada = s3Client.getObject(GetObjectRequest.builder()
-                    .bucket(bucketName).key(caminhoHistorico).build())) {
-                Files.copy(entrada, historicoAnterior);
-            } catch (NoSuchKeyException e) {
+            if (!baixarHistorico(s3Client, bucketName, caminhoHistorico, historicoAnterior)
+                    && !baixarHistorico(s3Client, bucketName, prefixoSilver + hostname + "_historico.csv", historicoAnterior)) {
                 System.out.println("Primeiro histórico desta mainframe.");
             }
 
@@ -224,6 +223,16 @@ public class Bronze2Silver {
 
         } catch (IOException | S3Exception e) {
             System.err.println("Erro ao fazer upload do arquivo para a S3: " + e.getMessage());
+        }
+    }
+
+    private boolean baixarHistorico(S3Client s3, String bucket, String chave, Path destino) throws IOException {
+        try (InputStream entrada = s3.getObject(GetObjectRequest.builder()
+                .bucket(bucket).key(chave).build())) {
+            Files.copy(entrada, destino);
+            return true;
+        } catch (NoSuchKeyException e) {
+            return false;
         }
     }
 
