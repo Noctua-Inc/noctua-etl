@@ -14,13 +14,14 @@ noctua-s3/
     │       ├── laptop-Itz_4thu_2026-11-09_20-38.csv
     │       └── laptop-Itz_4thu_historico.csv
     └── 03-gold/
-        ├── laptop-Itz_4thu_2026-11-09_20-38_todos_registros.json
-        ├── laptop-Itz_4thu_2026-11-09_20-38_cpu_registros.json
-        ├── laptop-Itz_4thu_2026-11-09_20-38_ram_registros.json
-        ├── laptop-Itz_4thu_2026-11-09_20-38_rede_registros.json
-        └── laptop-Itz_4thu_2026-11-09_20-38_disco_registros.json
+        └── laptop-Itz_4thu/
+            ├── laptop-Itz_4thu_2026-11-09_20-38_todos_registros.json
+            ├── laptop-Itz_4thu_2026-11-09_20-38_cpu_registros.json
+            ├── laptop-Itz_4thu_2026-11-09_20-38_ram_registros.json
+            ├── laptop-Itz_4thu_2026-11-09_20-38_rede_registros.json
+            └── laptop-Itz_4thu_2026-11-09_20-38_disco_registros.json
 ```
 
 - **Bronze** guarda os CSVs brutos de métricas e de processos enviados pelo script de captura.
 - **Silver** guarda o último lote tratado e o histórico de sete dias por mainframe. O histórico tem uma linha por minuto com as médias de CPU, RAM e ocupação do disco.
-- **Gold** guarda os JSONs produzidos pelo Silver2Gold.
+- **Gold** terá uma pasta por mainframe para os JSONs produzidos pelo Silver2Gold.
