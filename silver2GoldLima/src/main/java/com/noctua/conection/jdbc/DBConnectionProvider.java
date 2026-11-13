@@ -12,7 +12,7 @@ public class DBConnectionProvider {
     private JdbcTemplate jdbc;
 
     public DBConnectionProvider() {
-        Dotenv dotenv = Dotenv.load();
+        Dotenv dotenv = Dotenv.configure().ignoreIfMissing().load();
 
         String url = "jdbc:mysql://"
                 + dotenv.get("DB_HOST") + ":"

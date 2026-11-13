@@ -21,13 +21,9 @@ import java.util.stream.Stream;
 public class Bronze2Silver {
     DateTimeFormatter formato = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH:mm");
 
-    // Construtor
-    public Bronze2Silver() {
-    }
-
     // Lista de Métodos
     public String searchingFileCsv () {
-        Dotenv dotenv = Dotenv.load();
+        Dotenv dotenv = Dotenv.configure().ignoreIfMissing().load();
 
         S3Client s3Client = new S3Provider().getS3Client();
         String bucketName = dotenv.get("BUCKET_NAME");
@@ -65,7 +61,7 @@ public class Bronze2Silver {
             return;
         }
 
-        Dotenv dotenv = Dotenv.load();
+        Dotenv dotenv = Dotenv.configure().ignoreIfMissing().load();
         S3Client s3Client = new S3Provider().getS3Client();
         String bucketName = dotenv.get("BUCKET_NAME");
 
@@ -77,7 +73,7 @@ public class Bronze2Silver {
 
             String nomeApenasDoArquivo = pathFile.substring(pathFile.lastIndexOf('/') + 1);
 
-            File diretorioBronze = new File("bronze");
+            File diretorioBronze = new File("/tmp/bronze");
             if (!diretorioBronze.exists()) {
                 diretorioBronze.mkdirs();
             }
@@ -101,7 +97,7 @@ public class Bronze2Silver {
 
         String nomeApenasDoArquivo = pathFile.substring(pathFile.lastIndexOf('/') + 1);
 
-        File diretorioSilver = new File("silver");
+        File diretorioSilver = new File("/tmp/silver");
         if (!diretorioSilver.exists()) {
             diretorioSilver.mkdirs();
         }
@@ -109,7 +105,7 @@ public class Bronze2Silver {
         File arquivoDestino = new File(diretorioSilver, nomeApenasDoArquivo);
 
         try (
-                BufferedReader reader = new BufferedReader(new FileReader(new File(new File("bronze"), nomeApenasDoArquivo)));
+                BufferedReader reader = new BufferedReader(new FileReader(new File(new File("/tmp/bronze"), nomeApenasDoArquivo)));
                 BufferedWriter writer = new BufferedWriter(new FileWriter(arquivoDestino))
         ) {
 
@@ -163,10 +159,10 @@ public class Bronze2Silver {
         }
 
         String nomeArquivo = pathFile.substring(pathFile.lastIndexOf('/') + 1);
-        File file = new File("silver", nomeArquivo);
+        File file = new File("/tmp/silver", nomeArquivo);
         String empresa = pathFile.substring(0, pathFile.indexOf("/01-bronze/"));
 
-        Dotenv dotenv = Dotenv.load();
+        Dotenv dotenv = Dotenv.configure().ignoreIfMissing().load();
         S3Client s3Client = new S3Provider().getS3Client();
         String bucketName = dotenv.get("BUCKET_NAME");
 
@@ -177,8 +173,8 @@ public class Bronze2Silver {
             String prefixo = prefixoSilver + hostname + "/";
             String pathS3 = prefixo + nomeArquivo;
             String caminhoHistorico = prefixo + hostname + "_historico.csv";
-            Path historicoAnterior = Path.of("silver", hostname + "_historico_anterior.csv");
-            Path historicoAtualizado = Path.of("silver", hostname + "_historico.csv");
+            Path historicoAnterior = Path.of("/tmp/silver", hostname + "_historico_anterior.csv");
+            Path historicoAtualizado = Path.of("/tmp/silver", hostname + "_historico.csv");
 
             Files.deleteIfExists(historicoAnterior);
             if (!baixarHistorico(s3Client, bucketName, caminhoHistorico, historicoAnterior)
@@ -201,7 +197,7 @@ public class Bronze2Silver {
 
             System.out.println("Arquivo enviado com sucesso para a S3 com a chave: " + pathS3);
 
-            List<String> diretoriosParaApagar = List.of("bronze", "silver");
+            List<String> diretoriosParaApagar = List.of("/tmp/bronze", "/tmp/silver");
 
             for (String diretorio : diretoriosParaApagar) {
                 Path caminho = Path.of(diretorio);
