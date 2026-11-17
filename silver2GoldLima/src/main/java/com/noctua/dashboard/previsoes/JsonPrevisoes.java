@@ -65,8 +65,8 @@ public class JsonPrevisoes {
         cpu.add("uso", metricas[0]);
         ram.add("uso", metricas[1]);
         disco.add("ocupacao", metricas[2]);
-        disco.add("leitura", metricaSemCapturas(atualizado));
-        disco.add("escrita", metricaSemCapturas(atualizado));
+        disco.add("leitura", metricas[3]);
+        disco.add("escrita", metricas[4]);
         componentes.add("cpu", cpu);
         componentes.add("ram", ram);
         componentes.add("disco", disco);
@@ -78,25 +78,7 @@ public class JsonPrevisoes {
         JsonObject componentes = documento.getAsJsonObject("componentes");
         if (m == 0) return componentes.getAsJsonObject("cpu").getAsJsonObject("uso");
         if (m == 1) return componentes.getAsJsonObject("ram").getAsJsonObject("uso");
-        return componentes.getAsJsonObject("disco").getAsJsonObject("ocupacao");
-    }
-
-    private JsonObject metricaSemCapturas(LocalDateTime atual) {
-        JsonObject resultado = new JsonObject();
-        resultado.addProperty("unidade", "MiB/s");
-        resultado.add("limite_minimo", JsonNull.INSTANCE);
-        resultado.add("limite_maximo", JsonNull.INSTANCE);
-        JsonObject indicadores = new JsonObject();
-        for (String nome : new String[]{"maior_previsto", "menor_previsto", "primeira_saida_em_minutos", "primeira_saida_tipo"}) {
-            indicadores.add(nome, JsonNull.INSTANCE);
-        }
-        resultado.add("indicadores", indicadores);
-        JsonObject graficos = new JsonObject();
-        graficos.add("atual", CalculosPrevisoes.ponto(atual, null));
-        for (String nome : new String[]{"historico", "previsao", "mapa"}) graficos.add(nome, new JsonArray());
-        resultado.add("graficos", graficos);
-        resultado.addProperty("motivo", "O Silver ainda não fornece leitura e escrita globais do disco.");
-        return resultado;
+        return componentes.getAsJsonObject("disco").getAsJsonObject(CalculosPrevisoes.NOMES[m]);
     }
 
     public void publicar(String chave, JsonObject novo) throws IOException {
@@ -134,10 +116,10 @@ public class JsonPrevisoes {
             resumo.addProperty("id_empresa", idEmpresa);
             resumo.addProperty("atualizado_em", CalculosPrevisoes.horario(referencia));
             JsonObject componentes = new JsonObject();
-            for (int m = 0; m < 3; m++) {
-                JsonObject grupo = new JsonObject();
+            for (int m = 0; m < 5; m++) {
+                JsonObject grupo = m < 3 ? new JsonObject() : componentes.getAsJsonObject("disco");
                 JsonObject resultado = new JsonObject();
-                resultado.addProperty("unidade", "%");
+                resultado.addProperty("unidade", m < 3 ? "%" : "MiB/s");
                 JsonArray linhas = new JsonArray();
                 for (JsonElement elemento : documentos) {
                     JsonObject documento = elemento.getAsJsonObject();
@@ -188,17 +170,9 @@ public class JsonPrevisoes {
                 if (m < 2) {
                     grupo.add("uso", resultado);
                 } else {
-                    grupo.add("ocupacao", resultado);
+                    grupo.add(CalculosPrevisoes.NOMES[m], resultado);
                 }
-                if (m == 2) {
-                    for (String nome : new String[]{"leitura", "escrita"}) {
-                        JsonObject vazio = new JsonObject();
-                        vazio.addProperty("unidade", "MiB/s");
-                        vazio.add("mainframes", new JsonArray());
-                        grupo.add(nome, vazio);
-                    }
-                }
-                componentes.add(new String[]{"cpu", "ram", "disco"}[m], grupo);
+                componentes.add(new String[]{"cpu", "ram", "disco", "disco", "disco"}[m], grupo);
             }
             resumo.add("componentes", componentes);
             if (gravar(chave, resumo, anterior.getEtag())) return;

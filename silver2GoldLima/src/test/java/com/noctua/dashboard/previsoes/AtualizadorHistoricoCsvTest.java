@@ -17,8 +17,8 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 class AtualizadorHistoricoCsvTest {
-    private static final String LOTE = "Timestamp,HostName,Porcentagem_CPU,Porcentagem_RAM,Porcentagem_Disco\n";
-    private static final String HISTORICO = "Timestamp,HostName,Quantidade_Capturas,Porcentagem_CPU,Porcentagem_RAM,Porcentagem_Disco\n";
+    private static final String LOTE = "Timestamp,HostName,Porcentagem_CPU,Porcentagem_RAM,Porcentagem_Disco,Leitura_Disco_MiB_s,Escrita_Disco_MiB_s\n";
+    private static final String HISTORICO = "Timestamp,HostName,Quantidade_Capturas,Porcentagem_CPU,Porcentagem_RAM,Porcentagem_Disco,Leitura_Disco_MiB_s,Escrita_Disco_MiB_s\n";
     private final AtualizadorHistoricoCsv atualizador = new AtualizadorHistoricoCsv();
     private final LeitorCsv leitor = new LeitorCsv();
     private double[] valores(String[] linha) {
@@ -33,9 +33,9 @@ class AtualizadorHistoricoCsvTest {
         Path lote = diretorio.resolve("lote.csv");
         Path historico = diretorio.resolve("MF_historico.csv");
         String conteudo = LOTE + """
-                2026-11-11 14:39:10,MF,0,0,0
-                2026-11-11 14:37:50,MF,80,60,100
-                2026-11-11 14:37:10,MF,20,40,60
+                2026-11-11 14:39:10,MF,0,0,0,120.0,240.0
+                2026-11-11 14:37:50,MF,80,60,100,120.0,240.0
+                2026-11-11 14:37:10,MF,20,40,60,120.0,240.0
                 """;
         Files.writeString(lote, conteudo);
 
@@ -55,8 +55,8 @@ class AtualizadorHistoricoCsvTest {
     void combinaHistoricoComLotePreservandoPesoDasCapturas() throws IOException {
         Path lote = diretorio.resolve("lote.csv");
         Path historico = diretorio.resolve("MF_historico.csv");
-        Files.writeString(lote, LOTE + "2026-11-11 14:37:50,MF,80,60,100\n");
-        Files.writeString(historico, HISTORICO + "2026-11-11 14:37:00,MF,3,20,40,60\n");
+        Files.writeString(lote, LOTE + "2026-11-11 14:37:50,MF,80,60,100,30,50\n");
+        Files.writeString(historico, HISTORICO + "2026-11-11 14:37:00,MF,3,20,40,60,10,30\n");
 
         atualizador.atualizar(lote.toString(), historico.toString(), "MF");
 
@@ -64,6 +64,8 @@ class AtualizadorHistoricoCsvTest {
         assertEquals(1, capturas.size());
         assertEquals(4, Integer.parseInt(capturas.get(0)[2]));
         assertArrayEquals(new double[]{35, 45, 70}, valores(capturas.get(0)), 0.0);
+        assertEquals(15, Double.parseDouble(capturas.get(0)[6]));
+        assertEquals(35, Double.parseDouble(capturas.get(0)[7]));
         try (var arquivos = Files.list(diretorio)) {
             assertEquals(2, arquivos.count());
         }
@@ -74,11 +76,11 @@ class AtualizadorHistoricoCsvTest {
         Path lote = diretorio.resolve("lote.csv");
         Path historico = diretorio.resolve("MF_historico.csv");
         Files.writeString(lote, LOTE + """
-                2026-11-04 14:36:00,MF,10,20,30
-                2026-11-04 14:37:00,MF,20,30,40
-                2026-11-10 14:37:00,MF,30,40,50
+                2026-11-04 14:36:00,MF,10,20,30,120.0,240.0
+                2026-11-04 14:37:00,MF,20,30,40,120.0,240.0
+                2026-11-10 14:37:00,MF,30,40,50,120.0,240.0
                 """);
-        Files.writeString(historico, HISTORICO + "2026-11-11 14:37:00,MF,2,40,50,60\n");
+        Files.writeString(historico, HISTORICO + "2026-11-11 14:37:00,MF,2,40,50,60,120.0,240.0\n");
 
         atualizador.atualizar(lote.toString(), historico.toString(), "MF");
 
@@ -94,8 +96,8 @@ class AtualizadorHistoricoCsvTest {
     void loteInvalidoNaoModificaHistorico(String valores) throws IOException {
         Path lote = diretorio.resolve("lote.csv");
         Path historico = diretorio.resolve("MF_historico.csv");
-        String anterior = HISTORICO + "2026-11-11 14:37:00,MF,2,40,50,60\n";
-        Files.writeString(lote, LOTE + "2026-11-11 14:38:00," + valores + "\n");
+        String anterior = HISTORICO + "2026-11-11 14:37:00,MF,2,40,50,60,120.0,240.0\n";
+        Files.writeString(lote, LOTE + "2026-11-11 14:38:00," + valores + ",120.0,240.0\n");
         Files.writeString(historico, anterior);
 
         assertThrows(IOException.class, () -> atualizador.atualizar(lote.toString(), historico.toString(), "MF"));
@@ -108,7 +110,7 @@ class AtualizadorHistoricoCsvTest {
         Path lote = diretorio.resolve("lote.csv");
         Path historico = diretorio.resolve("MF_historico.csv");
         Files.writeString(lote, LOTE);
-        Files.writeString(historico, HISTORICO + "2026-11-11 14:37:00,MF,2,40.0,50.0,60.0\n");
+        Files.writeString(historico, HISTORICO + "2026-11-11 14:37:00,MF,2,40.0,50.0,60.0,120.0,240.0\n");
         List<String> anterior = Files.readAllLines(historico);
 
         atualizador.atualizar(lote.toString(), historico.toString(), "MF");
@@ -130,7 +132,7 @@ class AtualizadorHistoricoCsvTest {
     @Test
     void rejeitaUsarOProprioLoteComoHistorico() throws IOException {
         Path lote = diretorio.resolve("lote.csv");
-        String conteudo = LOTE + "2026-11-11 14:37:00,MF,40,50,60\n";
+        String conteudo = LOTE + "2026-11-11 14:37:00,MF,40,50,60,120.0,240.0\n";
         Files.writeString(lote, conteudo);
 
         assertThrows(IOException.class, () -> atualizador.atualizar(lote.toString(), lote.toString(), "MF"));
@@ -140,13 +142,13 @@ class AtualizadorHistoricoCsvTest {
     @Test
     void loteEHistoricoEquivalentesProduzemMesmaSeriePreservandoZerosELacunas() throws IOException {
         String lote = LOTE + """
-                2026-11-11 14:37:10,MF,20,40,60
-                2026-11-11 14:37:50,MF,80,60,100
-                2026-11-11 14:39:15,MF,0,0,0
+                2026-11-11 14:37:10,MF,20,40,60,120.0,240.0
+                2026-11-11 14:37:50,MF,80,60,100,120.0,240.0
+                2026-11-11 14:39:15,MF,0,0,0,120.0,240.0
                 """;
         String historico = HISTORICO + """
-                2026-11-11 14:37:00,MF,2,50,50,80
-                2026-11-11 14:39:00,MF,1,0,0,0
+                2026-11-11 14:37:00,MF,2,50,50,80,120.0,240.0
+                2026-11-11 14:39:00,MF,1,0,0,0,120.0,240.0
                 """;
 
         Path arquivoLote = diretorio.resolve("lote.csv");

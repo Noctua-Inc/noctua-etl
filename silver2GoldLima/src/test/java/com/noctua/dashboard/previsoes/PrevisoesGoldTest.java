@@ -29,7 +29,7 @@ class PrevisoesGoldTest {
     static final String SILVER = "sptech/02-silver/MF/MF_historico.csv";
     static final String GOLD = "sptech/03-gold/MF/";
     static final String ARQUIVO = GOLD + "historico-previsoes/previsoes.json";
-    static final String CAB = "Timestamp,HostName,Quantidade_Capturas,Porcentagem_CPU,Porcentagem_RAM,Porcentagem_Disco\n";
+    static final String CAB = "Timestamp,HostName,Quantidade_Capturas,Porcentagem_CPU,Porcentagem_RAM,Porcentagem_Disco,Leitura_Disco_MiB_s,Escrita_Disco_MiB_s\n";
 
     static class S3Memoria {
         Map<String, byte[]> objetos = new HashMap<>();
@@ -182,7 +182,7 @@ class PrevisoesGoldTest {
     void leCsvComBomECrLfSemAcessarArquivoDePrevisoesAnteriores() throws Exception {
         S3Memoria s3 = new S3Memoria();
         JdbcTemplate jdbc = banco();
-        String csv = "\uFEFF" + CAB.replace("\n", "\r\n") + "2026-11-11 14:37:00,MF,2,40,50,60\r\n\r\n";
+        String csv = "\uFEFF" + CAB.replace("\n", "\r\n") + "2026-11-11 14:37:00,MF,2,40,50,60,120.0,240.0\r\n\r\n";
         s3.colocar(SILVER, csv.getBytes(StandardCharsets.UTF_8));
         s3.colocar(ARQUIVO, "arquivo antigo que não deve ser lido".getBytes(StandardCharsets.UTF_8));
 
@@ -199,7 +199,7 @@ class PrevisoesGoldTest {
     void publicaDocumentosDaMainframeEResumoSemArquivoOuIndicadoresDeErro() throws Exception {
         S3Memoria s3 = new S3Memoria();
         JdbcTemplate jdbc = banco();
-        String a = "2026-11-11 14:37:00,MF,20,40,50,60\n";
+        String a = "2026-11-11 14:37:00,MF,20,40,50,60,120.0,240.0\n";
         executar(s3, jdbc, "2026-11-11T14:37:10", a);
         JsonObject primeiro = s3.json(GOLD + "previsoes.json");
         assertEquals(1, primeiro.get("id_empresa").getAsInt());
@@ -219,11 +219,11 @@ class PrevisoesGoldTest {
         assertEquals("2026-11-11T14:40-03:00", JsonPrevisoes.metrica(primeiro, 0).getAsJsonObject("graficos")
                 .getAsJsonArray("previsao").get(0).getAsJsonObject().get("horario").getAsString());
 
-        String b = a + "2026-11-11 14:40:00,MF,20,60,50,60\n2026-11-11 14:47:00,MF,20,60,50,60\n";
+        String b = a + "2026-11-11 14:40:00,MF,20,60,50,60,120.0,240.0\n2026-11-11 14:47:00,MF,20,60,50,60,120.0,240.0\n";
         executar(s3, jdbc, "2026-11-11T14:47:10", b);
         assertEquals("2026-11-11T14:47-03:00", s3.json(GOLD + "previsoes.json").get("atualizado_em").getAsString());
 
-        String c = b + "2026-11-11 14:50:00,MF,20,90,50,60\n2026-11-11 14:57:00,MF,20,90,50,60\n";
+        String c = b + "2026-11-11 14:50:00,MF,20,90,50,60,120.0,240.0\n2026-11-11 14:57:00,MF,20,90,50,60,120.0,240.0\n";
         executar(s3, jdbc, "2026-11-11T14:57:10", c);
         executar(s3, jdbc, "2026-11-11T14:57:20", c);
         JsonObject documento = s3.json(GOLD + "previsoes.json");
@@ -236,6 +236,18 @@ class PrevisoesGoldTest {
             assertTrue(indicadores.has("maior_previsto"));
         }
         JsonObject disco = documento.getAsJsonObject("componentes").getAsJsonObject("disco");
+        for (int m = 3; m < 5; m++) {
+            JsonObject taxa = JsonPrevisoes.metrica(documento, m);
+            assertEquals("MiB/s", taxa.get("unidade").getAsString());
+            assertEquals(120.0 * (m - 2), taxa.getAsJsonObject("graficos").getAsJsonObject("atual").get("valor").getAsDouble());
+            assertEquals(120.0 * (m - 2), taxa.getAsJsonObject("graficos").getAsJsonArray("previsao")
+                    .get(0).getAsJsonObject().get("valor").getAsDouble());
+            JsonObject resumoTaxa = s3.json("sptech/03-gold/previsoes/resumo.json").getAsJsonObject("componentes")
+                    .getAsJsonObject("disco").getAsJsonObject(CalculosPrevisoes.NOMES[m]);
+            assertEquals("MiB/s", resumoTaxa.get("unidade").getAsString());
+            assertEquals(120.0 * (m - 2), resumoTaxa.getAsJsonArray("mainframes").get(0)
+                    .getAsJsonObject().get("maior_previsto").getAsDouble());
+        }
         assertFalse(disco.getAsJsonObject("leitura").getAsJsonObject("indicadores").has("erro_medio"));
         assertFalse(disco.getAsJsonObject("escrita").getAsJsonObject("indicadores").has("unidade_erro"));
         assertFalse(s3.objetos.containsKey(ARQUIVO));
@@ -248,9 +260,9 @@ class PrevisoesGoldTest {
     void eventoAntigoNaoSobrescreveDocumentoNovo() throws Exception {
         S3Memoria s3 = new S3Memoria();
         JdbcTemplate jdbc = banco();
-        String antigo = "2026-11-11 14:37:00,MF,2,40,50,60\n";
+        String antigo = "2026-11-11 14:37:00,MF,2,40,50,60,120.0,240.0\n";
         executar(s3, jdbc, "2026-11-11T14:37:10", antigo);
-        executar(s3, jdbc, "2026-11-11T21:03:10", antigo + "2026-11-11 21:03:00,MF,2,50,60,70\n");
+        executar(s3, jdbc, "2026-11-11T21:03:10", antigo + "2026-11-11 21:03:00,MF,2,50,60,70,120.0,240.0\n");
         JsonObject novo = s3.json(GOLD + "previsoes.json");
         executar(s3, jdbc, "2026-11-11T21:04:10", antigo);
         assertEquals("2026-11-11T21:03-03:00", s3.json(GOLD + "previsoes.json").get("atualizado_em").getAsString());
@@ -262,7 +274,7 @@ class PrevisoesGoldTest {
     void cruzaMeiaNoiteEPreservaZerosELacunas() throws Exception {
         S3Memoria s3 = new S3Memoria();
         JdbcTemplate jdbc = banco();
-        executar(s3, jdbc, "2026-11-11T23:37:10", "2026-11-11 23:37:00,MF,2,0,0,0\n");
+        executar(s3, jdbc, "2026-11-11T23:37:10", "2026-11-11 23:37:00,MF,2,0,0,0,120.0,240.0\n");
         JsonObject metrica = JsonPrevisoes.metrica(s3.json(GOLD + "previsoes.json"), 0);
         JsonArray futuro = metrica.getAsJsonObject("graficos").getAsJsonArray("previsao");
         assertEquals("2026-11-12T05:00-03:00", futuro.get(futuro.size() - 1).getAsJsonObject().get("horario").getAsString());
@@ -276,7 +288,7 @@ class PrevisoesGoldTest {
         S3Memoria s3 = new S3Memoria();
         s3.conflitos = 1;
         s3.statusConflito = status;
-        executar(s3, banco(), "2026-11-11T14:37:10", "2026-11-11 14:37:00,MF,2,40,50,60\n");
+        executar(s3, banco(), "2026-11-11T14:37:10", "2026-11-11 14:37:00,MF,2,40,50,60,120.0,240.0\n");
         assertEquals(Integer.valueOf(2), s3.tentativas.get(GOLD + "previsoes.json"));
         assertTrue(s3.objetos.containsKey("sptech/03-gold/previsoes/resumo.json"));
         assertFalse(s3.objetos.containsKey(ARQUIVO));
@@ -286,10 +298,10 @@ class PrevisoesGoldTest {
     void mesmoMinutoComMenosCapturasNaoSobrescreveDocumentoMaisCompleto() throws Exception {
         S3Memoria s3 = new S3Memoria();
         JdbcTemplate jdbc = banco();
-        executar(s3, jdbc, "2026-11-11T14:37:10", "2026-11-11 14:37:00,MF,20,40,50,60\n");
+        executar(s3, jdbc, "2026-11-11T14:37:10", "2026-11-11 14:37:00,MF,20,40,50,60,120.0,240.0\n");
         JsonObject completo = s3.json(GOLD + "previsoes.json");
 
-        executar(s3, jdbc, "2026-11-11T14:37:20", "2026-11-11 14:37:00,MF,2,90,90,90\n");
+        executar(s3, jdbc, "2026-11-11T14:37:20", "2026-11-11 14:37:00,MF,2,90,90,90,120.0,240.0\n");
 
         assertEquals(completo, s3.json(GOLD + "previsoes.json"));
     }
@@ -298,7 +310,7 @@ class PrevisoesGoldTest {
     void geracaoMaisAntigaNoMesmoMinutoNaoSobrescreveDocumento() throws Exception {
         S3Memoria s3 = new S3Memoria();
         JdbcTemplate jdbc = banco();
-        String captura = "2026-11-11 14:37:00,MF,2,40,50,60\n";
+        String captura = "2026-11-11 14:37:00,MF,2,40,50,60,120.0,240.0\n";
         executar(s3, jdbc, "2026-11-11T14:37:20", captura);
         JsonObject novo = s3.json(GOLD + "previsoes.json");
 
@@ -311,14 +323,14 @@ class PrevisoesGoldTest {
     void relerAposConflitoPreservaDocumentoGravadoPorOutraExecucao() throws Exception {
         S3Memoria s3 = new S3Memoria();
         JdbcTemplate jdbc = banco();
-        executar(s3, jdbc, "2026-11-11T14:37:10", "2026-11-11 14:37:00,MF,2,40,50,60\n");
+        executar(s3, jdbc, "2026-11-11T14:37:10", "2026-11-11 14:37:00,MF,2,40,50,60,120.0,240.0\n");
         JsonObject concorrente = s3.json(GOLD + "previsoes.json");
         concorrente.addProperty("atualizado_em", "2026-11-11T14:50-03:00");
         concorrente.addProperty("gerado_em", "2026-11-11T14:50:10-03:00");
         s3.chaveConcorrente = GOLD + "previsoes.json";
         s3.documentoConcorrente = concorrente;
 
-        executar(s3, jdbc, "2026-11-11T14:40:10", "2026-11-11 14:40:00,MF,2,90,90,90\n");
+        executar(s3, jdbc, "2026-11-11T14:40:10", "2026-11-11 14:40:00,MF,2,90,90,90,120.0,240.0\n");
 
         assertEquals(concorrente, s3.json(GOLD + "previsoes.json"));
         assertEquals("2026-11-11T14:50-03:00", s3.json("sptech/03-gold/previsoes/resumo.json").get("atualizado_em").getAsString());
@@ -331,7 +343,7 @@ class PrevisoesGoldTest {
         s3.statusConflito = status;
         s3.conflitosResumo = 1;
 
-        executar(s3, banco(), "2026-11-11T14:37:10", "2026-11-11 14:37:00,MF,2,40,50,60\n");
+        executar(s3, banco(), "2026-11-11T14:37:10", "2026-11-11 14:37:00,MF,2,40,50,60,120.0,240.0\n");
 
         assertEquals(Integer.valueOf(2), s3.tentativas.get("sptech/03-gold/previsoes/resumo.json"));
         assertEquals(Integer.valueOf(1), s3.tentativas.get(GOLD + "previsoes.json"));
@@ -343,7 +355,7 @@ class PrevisoesGoldTest {
         s3.conflitos = 4;
 
         IOException erro = assertThrows(IOException.class, () -> executar(s3, banco(),
-                "2026-11-11T14:37:10", "2026-11-11 14:37:00,MF,2,40,50,60\n"));
+                "2026-11-11T14:37:10", "2026-11-11 14:37:00,MF,2,40,50,60,120.0,240.0\n"));
 
         assertEquals("O documento da mainframe mudou durante o envio. Reexecute este evento.", erro.getMessage());
         assertEquals(Integer.valueOf(4), s3.tentativas.get(GOLD + "previsoes.json"));
@@ -356,7 +368,7 @@ class PrevisoesGoldTest {
         s3.conflitosResumo = 4;
 
         IOException erro = assertThrows(IOException.class, () -> executar(s3, banco(),
-                "2026-11-11T14:37:10", "2026-11-11 14:37:00,MF,2,40,50,60\n"));
+                "2026-11-11T14:37:10", "2026-11-11 14:37:00,MF,2,40,50,60,120.0,240.0\n"));
 
         assertEquals("O resumo mudou durante o envio. Reexecute este evento.", erro.getMessage());
         assertEquals(Integer.valueOf(4), s3.tentativas.get("sptech/03-gold/previsoes/resumo.json"));
@@ -371,7 +383,7 @@ class PrevisoesGoldTest {
         s3.conflitos = 1;
 
         S3Exception erro = assertThrows(S3Exception.class, () -> executar(s3, banco(),
-                "2026-11-11T14:37:10", "2026-11-11 14:37:00,MF,2,40,50,60\n"));
+                "2026-11-11T14:37:10", "2026-11-11 14:37:00,MF,2,40,50,60,120.0,240.0\n"));
 
         assertEquals(500, erro.statusCode());
         assertEquals(Integer.valueOf(1), s3.tentativas.get(GOLD + "previsoes.json"));
@@ -385,7 +397,7 @@ class PrevisoesGoldTest {
         for (int i = 0; i <= 7 * 1440; i++) {
             LocalDateTime hora = inicio.plusMinutes(i);
             double cpu = 45 + 20 * Math.sin(2 * Math.PI * (hora.getHour() * 60 + hora.getMinute()) / 1440.0);
-            historico.append(hora.format(formato)).append(",MF,20,").append(cpu).append(",50,60\n");
+            historico.append(hora.format(formato)).append(",MF,20,").append(cpu).append(",50,60,120.0,240.0\n");
         }
         CalculosPrevisoes calculos = new CalculosPrevisoes();
         calculos.lerHistorico(new ByteArrayInputStream(historico.toString().getBytes(StandardCharsets.UTF_8)), "MF");

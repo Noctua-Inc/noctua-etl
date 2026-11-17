@@ -16,8 +16,8 @@ import java.util.ArrayList;
 import static org.junit.jupiter.api.Assertions.*;
 
 class LeitorCsvTest {
-    private static final String LOTE = "Timestamp,HostName,Porcentagem_CPU,Porcentagem_RAM,Porcentagem_Disco\n";
-    private static final String HISTORICO = "Timestamp,HostName,Quantidade_Capturas,Porcentagem_CPU,Porcentagem_RAM,Porcentagem_Disco\n";
+    private static final String LOTE = "Timestamp,HostName,Porcentagem_CPU,Porcentagem_RAM,Porcentagem_Disco,Leitura_Disco_MiB_s,Escrita_Disco_MiB_s\n";
+    private static final String HISTORICO = "Timestamp,HostName,Quantidade_Capturas,Porcentagem_CPU,Porcentagem_RAM,Porcentagem_Disco,Leitura_Disco_MiB_s,Escrita_Disco_MiB_s\n";
     private final LeitorCsv leitor = new LeitorCsv();
     private double[] valores(String[] linha) {
         return new double[]{Double.parseDouble(linha[3]), Double.parseDouble(linha[4]), Double.parseDouble(linha[5])};
@@ -35,7 +35,7 @@ class LeitorCsvTest {
     @Test
     void leArquivoUtf8ComNomeEHostnameAcentuados() throws IOException {
         Path arquivo = diretorio.resolve("histórico.csv");
-        Files.writeString(arquivo, HISTORICO + "2026-11-11 14:37:00,MÁQUINA,2,40,50,60\n");
+        Files.writeString(arquivo, HISTORICO + "2026-11-11 14:37:00,MÁQUINA,2,40,50,60,120.0,240.0\n");
 
         ArrayList<String[]> capturas = leitor.ler(arquivo.toString(), "MÁQUINA");
 
@@ -59,8 +59,8 @@ class LeitorCsvTest {
     @Test
     void leLoteComColunasAdicionaisEmOutraOrdem() throws IOException {
         String csv = """
-                Dados_Recebidos,Porcentagem_RAM,HostName,Timestamp,Porcentagem_Disco,Porcentagem_CPU,Freq_CPU
-                1.5,50,MF,2026-11-11 14:37:45,60,0,3.2
+                Dados_Recebidos,Porcentagem_RAM,HostName,Timestamp,Porcentagem_Disco,Porcentagem_CPU,Freq_CPU,Leitura_Disco_MiB_s,Escrita_Disco_MiB_s
+                1.5,50,MF,2026-11-11 14:37:45,60,0,3.2,120.0,240.0
                 """;
 
         ArrayList<String[]> capturas = lerTexto(csv);
@@ -74,8 +74,8 @@ class LeitorCsvTest {
     @Test
     void leHistoricoPreservandoQuantidadeEValoresSemJuntarAsLinhas() throws IOException {
         String csv = HISTORICO + """
-                2026-11-11 14:37:00,MF,3,20,40,60
-                2026-11-11 14:37:00,MF,1,80,60,100
+                2026-11-11 14:37:00,MF,3,20,40,60,120.0,240.0
+                2026-11-11 14:37:00,MF,1,80,60,100,120.0,240.0
                 """;
 
         ArrayList<String[]> capturas = lerTexto(csv);
@@ -91,7 +91,7 @@ class LeitorCsvTest {
     @Test
     void aceitaBomELinhasEmBranco() throws IOException {
         String csv = "\uFEFF" + HISTORICO.replace("\n", "\r\n")
-                + "\r\n   \r\n2026-11-11 14:37:00,MF,2,40,50,60\r\n\r\n";
+                + "\r\n   \r\n2026-11-11 14:37:00,MF,2,40,50,60,120.0,240.0\r\n\r\n";
 
         ArrayList<String[]> capturas = lerTexto(csv);
 
@@ -105,7 +105,7 @@ class LeitorCsvTest {
             "0,40,50,60", "-1,40,50,60", "1,NaN,50,60", "1,40,Infinity,60", "1,40,50,-Infinity"
     })
     void rejeitaQuantidadesOuPercentuaisInvalidos(String valores) {
-        String csv = HISTORICO + "2026-11-11 14:37:00,MF," + valores + "\n";
+        String csv = HISTORICO + "2026-11-11 14:37:00,MF," + valores + ",120.0,240.0\n";
 
         IOException erro = assertThrows(IOException.class,
                 () -> lerTexto(csv));
@@ -115,8 +115,8 @@ class LeitorCsvTest {
 
     @ParameterizedTest
     @ValueSource(strings = {
-            "Timestamp,HostName,Porcentagem_CPU,Porcentagem_RAM,Porcentagem_Disco\n2026-11-11 14:37:00,OUTRO,40,50,60\n",
-            "Timestamp,HostName,Quantidade_Capturas,Porcentagem_CPU,Porcentagem_RAM,Porcentagem_Disco\n2026-11-11 14:37:00,OUTRO,2,40,50,60\n"
+            "Timestamp,HostName,Porcentagem_CPU,Porcentagem_RAM,Porcentagem_Disco,Leitura_Disco_MiB_s,Escrita_Disco_MiB_s\n2026-11-11 14:37:00,OUTRO,40,50,60,120.0,240.0\n",
+            "Timestamp,HostName,Quantidade_Capturas,Porcentagem_CPU,Porcentagem_RAM,Porcentagem_Disco,Leitura_Disco_MiB_s,Escrita_Disco_MiB_s\n2026-11-11 14:37:00,OUTRO,2,40,50,60,120.0,240.0\n"
     })
     void rejeitaHostnameDiferenteNosDoisFormatos(String csv) {
         IOException erro = assertThrows(IOException.class,
@@ -127,7 +127,7 @@ class LeitorCsvTest {
 
     @Test
     void rejeitaColunaObrigatoriaAusente() {
-        String csv = "Timestamp,HostName,Porcentagem_RAM,Porcentagem_Disco\n2026-11-11 14:37:00,MF,50,60\n";
+        String csv = "Timestamp,HostName,Porcentagem_RAM,Porcentagem_Disco,Leitura_Disco_MiB_s,Escrita_Disco_MiB_s\n2026-11-11 14:37:00,MF,50,60\n";
 
         IOException erro = assertThrows(IOException.class,
                 () -> lerTexto(csv));

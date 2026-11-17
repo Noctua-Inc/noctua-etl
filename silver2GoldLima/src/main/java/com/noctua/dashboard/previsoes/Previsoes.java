@@ -67,9 +67,10 @@ public class Previsoes {
         String base = empresa + "/03-gold/" + mainframe.getHostname() + "/";
         JsonPrevisoes json = new JsonPrevisoes(s3, bucket);
 
-        JsonObject[] metricas = new JsonObject[3];
-        for (int m = 0; m < 3; m++) {
-            Double[] faixa = buscarFaixa(mainframe.getLimites(), new String[]{"CPU", "RAM", "DISCO"}[m]);
+        JsonObject[] metricas = new JsonObject[5];
+        for (int m = 0; m < 5; m++) {
+            Double[] faixa = m < 3 ? buscarFaixa(mainframe.getLimites(), new String[]{"CPU", "RAM", "DISCO"}[m])
+                    : new Double[]{null, null};
             metricas[m] = calculos.calcular(m, faixa[0], faixa[1], gerado);
         }
 

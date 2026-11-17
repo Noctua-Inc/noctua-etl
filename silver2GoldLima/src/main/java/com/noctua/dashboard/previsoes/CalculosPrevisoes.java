@@ -9,7 +9,7 @@ import java.util.*;
 
 public class CalculosPrevisoes {
     public static final ZoneId FUSO = ZoneId.of("America/Sao_Paulo");
-    public static final String[] NOMES = {"cpu", "ram", "ocupacao"};
+    public static final String[] NOMES = {"cpu", "ram", "ocupacao", "leitura", "escrita"};
 
     private final LeitorCsv leitor = new LeitorCsv();
     private final DateTimeFormatter formato = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
@@ -40,7 +40,9 @@ public class CalculosPrevisoes {
                 minutos[i] = new double[]{
                         Double.parseDouble(linha[3]),
                         Double.parseDouble(linha[4]),
-                        Double.parseDouble(linha[5])
+                        Double.parseDouble(linha[5]),
+                        Double.parseDouble(linha[6]),
+                        Double.parseDouble(linha[7])
                 };
             }
         }
@@ -148,7 +150,7 @@ public class CalculosPrevisoes {
         double desvioAtual = (somaY - inclinacao * somaX) / quantidade;
         int distancia = alvo - origem;
         double ajuste = Math.exp(-distancia / 60.0) * (desvioAtual + inclinacao * distancia);
-        return limitar(base + ajuste);
+        return metrica < 3 ? limitar(base + ajuste) : Math.max(0, base + ajuste);
     }
 
     private int escolherModelo(int metrica) {
@@ -193,7 +195,7 @@ public class CalculosPrevisoes {
         int modelo = escolherModelo(metrica);
         String[] nomes = {"Persistência", "Perfil diário", "Perfil diário com regressão linear recente"};
         JsonObject resultado = new JsonObject();
-        resultado.addProperty("unidade", "%");
+        resultado.addProperty("unidade", metrica < 3 ? "%" : "MiB/s");
         numero(resultado, "limite_minimo", minimo);
         numero(resultado, "limite_maximo", maximo);
         resultado.addProperty("modelo", nomes[modelo]);
@@ -211,7 +213,7 @@ public class CalculosPrevisoes {
             if (!futuro.isAfter(gerado)) continue;
             double valor = prever(metrica, indice(atual), indice(futuro), modelo);
             if (!Double.isFinite(valor)) valor = valor(metrica, indice(atual));
-            JsonObject ponto = ponto(futuro, limitar(valor));
+            JsonObject ponto = ponto(futuro, metrica < 3 ? limitar(valor) : Math.max(0, valor));
             previsao.add(ponto);
         }
         graficos.add("previsao", previsao);
@@ -256,7 +258,7 @@ public class CalculosPrevisoes {
         resultado.add("anomalias_observadas", anomalias);
         resultado.addProperty("tipo_anomalia", "Desvio das médias de minuto frente ao mesmo horário de dias anteriores");
         JsonArray correlacoes = new JsonArray();
-        for (int outra = 0; outra < 3; outra++) {
+        for (int outra = 0; outra < NOMES.length; outra++) {
             if (outra == metrica) continue;
             double sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0;
             int n = 0;

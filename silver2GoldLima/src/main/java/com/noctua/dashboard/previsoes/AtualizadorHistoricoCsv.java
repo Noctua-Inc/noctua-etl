@@ -13,7 +13,16 @@ import java.util.ArrayList;
 import java.util.Comparator;
 
 public class AtualizadorHistoricoCsv {
-    private static final String CABECALHO = "Timestamp,HostName,Quantidade_Capturas,Porcentagem_CPU,Porcentagem_RAM,Porcentagem_Disco";
+    private static final String CABECALHO =
+                    "Timestamp," +
+                    "HostName," +
+                    "Quantidade_Capturas," +
+                    "Porcentagem_CPU," +
+                    "Porcentagem_RAM," +
+                    "Porcentagem_Disco," +
+                    "Leitura_Disco_MiB_s," +
+                    "Escrita_Disco_MiB_s";
+
     private final DateTimeFormatter formato = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private final LeitorCsv leitor = new LeitorCsv();
 
@@ -60,7 +69,7 @@ public class AtualizadorHistoricoCsv {
                 int quantidadeAnterior = Integer.parseInt(anterior[2]);
                 int quantidadeNova = Integer.parseInt(captura[2]);
                 int total = quantidadeAnterior + quantidadeNova;
-                for (int m = 0; m < 3; m++) {
+                for (int m = 0; m < 5; m++) {
                     double valorAnterior = Double.parseDouble(anterior[m + 3]);
                     double valorNovo = Double.parseDouble(captura[m + 3]);
                     double media = (valorAnterior * quantidadeAnterior + valorNovo * quantidadeNova) / total;

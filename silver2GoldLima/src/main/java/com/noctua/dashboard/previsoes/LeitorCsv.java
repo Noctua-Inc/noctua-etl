@@ -34,6 +34,8 @@ public class LeitorCsv {
             int cpu = coluna(cabecalho, "Porcentagem_CPU");
             int ram = coluna(cabecalho, "Porcentagem_RAM");
             int disco = coluna(cabecalho, "Porcentagem_Disco");
+            int leituraDisco = coluna(cabecalho, "Leitura_Disco_MiB_s");
+            int escritaDisco = coluna(cabecalho, "Escrita_Disco_MiB_s");
             int quantidade = -1;
             for (int i = 0; i < cabecalho.length; i++) {
                 if (cabecalho[i].equals("Quantidade_Capturas")) {
@@ -55,6 +57,8 @@ public class LeitorCsv {
                 double valorCpu = Double.parseDouble(valores[cpu]);
                 double valorRam = Double.parseDouble(valores[ram]);
                 double valorDisco = Double.parseDouble(valores[disco]);
+                double valorLeituraDisco = Double.parseDouble(valores[leituraDisco]);
+                double valorEscritaDisco = Double.parseDouble(valores[escritaDisco]);
                 if (contagem <= 0 || !Double.isFinite(valorCpu) || !Double.isFinite(valorRam) || !Double.isFinite(valorDisco)) {
                     throw new IOException("Captura com quantidade ou percentuais inválidos.");
                 }
@@ -64,7 +68,9 @@ public class LeitorCsv {
                         Integer.toString(contagem),
                         Double.toString(valorCpu),
                         Double.toString(valorRam),
-                        Double.toString(valorDisco)
+                        Double.toString(valorDisco),
+                        Double.toString(valorLeituraDisco),
+                        Double.toString(valorEscritaDisco)
                 });
             }
         }
