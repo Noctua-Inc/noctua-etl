@@ -18,7 +18,7 @@ import java.util.List;
 import java.util.Locale;
 
 public class Silver2Gold {
-    DateTimeFormatter formato = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH:mm");
+    private DateTimeFormatter formato = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH:mm");
 
     public Silver2Gold() {
     }

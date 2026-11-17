@@ -3,7 +3,7 @@ package com.noctua.conection.lambda;
 import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
 import com.amazonaws.services.lambda.runtime.events.S3Event;
-import com.noctua.fetching.bucket.Previsoes;
+import com.noctua.dashboard.previsoes.Previsoes;
 
 public class EntradaLambda implements RequestHandler<S3Event, String> {
 

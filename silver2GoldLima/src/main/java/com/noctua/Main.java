@@ -1,6 +1,6 @@
 package com.noctua;
 
-//import com.noctua.fetching.bucket.Previsoes;
+//import com.noctua.dashboard.previsoes.Previsoes;
  import com.noctua.fetching.bucket.Silver2Gold;
 
 public class Main {
