@@ -13,7 +13,14 @@ import java.util.List;
 public class HistoricoCsv {
     private final DateTimeFormatter formato = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final String CABECALHO =
-            "Timestamp,HostName,Quantidade_Capturas,Porcentagem_CPU,Porcentagem_RAM,Porcentagem_Disco";
+                    "Timestamp," +
+                    "HostName," +
+                    "Quantidade_Capturas," +
+                    "Porcentagem_CPU," +
+                    "Porcentagem_RAM," +
+                    "Porcentagem_Disco," +
+                    "Leitura_Disco_MiB_s," +
+                    "Escrita_Disco_MiB_s";
 
     public void atualizar(Path anterior, Path lote, Path destino) throws IOException {
         List<String> capturasNovas = lerLote(lote);
@@ -33,6 +40,10 @@ public class HistoricoCsv {
                         + anteriorMinuto.ram * anteriorMinuto.quantidade) / total;
                 minuto.disco = (minuto.disco * minuto.quantidade
                         + anteriorMinuto.disco * anteriorMinuto.quantidade) / total;
+                minuto.leituraDisco = (minuto.leituraDisco * minuto.quantidade
+                        + anteriorMinuto.leituraDisco * anteriorMinuto.quantidade) / total;
+                minuto.escritaDisco = (minuto.escritaDisco * minuto.quantidade
+                        + anteriorMinuto.escritaDisco * anteriorMinuto.quantidade) / total;
                 minuto.quantidade = total;
             }
         }
@@ -52,6 +63,8 @@ public class HistoricoCsv {
         int colunaCpu = indice(cabecalho, "Porcentagem_CPU");
         int colunaRam = indice(cabecalho, "Porcentagem_RAM");
         int colunaDisco = indice(cabecalho, "Porcentagem_Disco");
+        int colunaLeituraDisco = indice(cabecalho, "Leitura_Disco_MiB_s");
+        int colunaEscritaDisco = indice(cabecalho, "Escrita_Disco_MiB_s");
         boolean arquivoResumido = CABECALHO.equals(cabecalho);
 
         // A posição 0 é o cabeçalho. As capturas começam na posição 1.
@@ -70,6 +83,8 @@ public class HistoricoCsv {
             minuto.cpu += Double.parseDouble(valores[colunaCpu]) * quantidade;
             minuto.ram += Double.parseDouble(valores[colunaRam]) * quantidade;
             minuto.disco += Double.parseDouble(valores[colunaDisco]) * quantidade;
+            minuto.leituraDisco += Double.parseDouble(valores[colunaLeituraDisco]) * quantidade;
+            minuto.escritaDisco += Double.parseDouble(valores[colunaEscritaDisco]) * quantidade;
         }
 
         // Até aqui, CPU, RAM e disco guardam somas. A divisão transforma cada soma em média.
@@ -77,6 +92,8 @@ public class HistoricoCsv {
             minuto.cpu /= minuto.quantidade;
             minuto.ram /= minuto.quantidade;
             minuto.disco /= minuto.quantidade;
+            minuto.leituraDisco /= minuto.quantidade;
+            minuto.escritaDisco /= minuto.quantidade;
         }
 
         return minutos;
@@ -109,8 +126,14 @@ public class HistoricoCsv {
             LocalDateTime inicio = minutos.get(minutos.size() - 1).horario.minusDays(7);
             for (Minuto minuto : minutos) {
                 if (!minuto.horario.isBefore(inicio)) {
-                    escritor.write(minuto.horario.format(formato) + "," + minuto.hostname
-                            + "," + minuto.quantidade + "," + minuto.cpu + "," + minuto.ram + "," + minuto.disco);
+                    escritor.write(minuto.horario.format(formato) + "," +
+                            minuto.hostname + "," +
+                            minuto.quantidade + "," +
+                            minuto.cpu + "," +
+                            minuto.ram + "," +
+                            minuto.disco + "," +
+                            minuto.leituraDisco + "," +
+                            minuto.escritaDisco);
                     escritor.newLine();
                 }
             }
@@ -142,6 +165,8 @@ public class HistoricoCsv {
         double cpu;
         double ram;
         double disco;
+        double leituraDisco;
+        double escritaDisco;
 
         Minuto(LocalDateTime horario, String hostname) {
             this.horario = horario;
