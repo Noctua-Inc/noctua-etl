@@ -123,7 +123,7 @@ public class HistoricoCsv {
                 return;
             }
 
-            LocalDateTime inicio = minutos.get(minutos.size() - 1).horario.minusDays(7);
+            LocalDateTime inicio = minutos.get(minutos.size() - 1).horario.minusDays(28);
             for (Minuto minuto : minutos) {
                 if (!minuto.horario.isBefore(inicio)) {
                     escritor.write(minuto.horario.format(formato) + "," +
