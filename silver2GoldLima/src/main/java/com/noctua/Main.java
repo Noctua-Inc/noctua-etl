@@ -1,7 +1,6 @@
 package com.noctua;
 
-//import com.noctua.dashboard.previsoes.Previsoes;
- import com.noctua.fetching.bucket.Silver2Gold;
+import com.noctua.fetching.bucket.Silver2Gold;
 
 public class Main {
     public static void main(String[] args) throws Exception {
@@ -11,8 +10,5 @@ public class Main {
         silver2Gold.downloadFile(caminhoArquivo);
         silver2Gold.fileCreation(caminhoArquivo);
         silver2Gold.uploadFile(caminhoArquivo);
-
-//        Previsoes previsoes = new Previsoes();
-//        previsoes.executar(args[0]);
     }
 }

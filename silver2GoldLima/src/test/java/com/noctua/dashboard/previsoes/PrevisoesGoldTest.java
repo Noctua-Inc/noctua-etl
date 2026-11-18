@@ -247,6 +247,7 @@ class PrevisoesGoldTest {
             assertEquals("MiB/s", resumoTaxa.get("unidade").getAsString());
             assertEquals(120.0 * (m - 2), resumoTaxa.getAsJsonArray("mainframes").get(0)
                     .getAsJsonObject().get("maior_previsto").getAsDouble());
+            assertEquals(0, resumoTaxa.getAsJsonObject("indicadores").get("mainframes_com_previsao").getAsInt());
         }
         assertFalse(disco.getAsJsonObject("leitura").getAsJsonObject("indicadores").has("erro_medio"));
         assertFalse(disco.getAsJsonObject("escrita").getAsJsonObject("indicadores").has("unidade_erro"));
@@ -280,6 +281,11 @@ class PrevisoesGoldTest {
         assertEquals("2026-11-12T05:00-03:00", futuro.get(futuro.size() - 1).getAsJsonObject().get("horario").getAsString());
         assertEquals(0, futuro.get(0).getAsJsonObject().get("valor").getAsDouble());
         assertTrue(metrica.getAsJsonObject("graficos").getAsJsonArray("historico").get(0).getAsJsonObject().get("valor").isJsonNull());
+        JsonObject indicadores = JsonPrevisoes.metrica(s3.json("sptech/03-gold/previsoes/resumo.json"), 0)
+                .getAsJsonObject("indicadores");
+        assertEquals("2026-11-11T23:40-03:00", indicadores.get("inicio_previsao").getAsString());
+        assertEquals("2026-11-12T05:00-03:00", indicadores.get("fim_previsao").getAsString());
+        assertEquals(1, indicadores.get("mainframes_com_desvio").getAsInt());
     }
 
     @ParameterizedTest
@@ -405,5 +411,127 @@ class PrevisoesGoldTest {
         assertEquals("Perfil diário", resultado.get("modelo").getAsString());
         assertEquals(33, resultado.getAsJsonObject("graficos").getAsJsonArray("previsao").size());
         assertEquals(168, resultado.getAsJsonObject("graficos").getAsJsonArray("mapa").size());
+    }
+
+    private JsonArray curva(double... valores) {
+        JsonArray pontos = new JsonArray();
+        LocalDateTime inicio = LocalDateTime.of(2026, 11, 11, 14, 10);
+        for (int i = 0; i < 36; i++) {
+            pontos.add(CalculosPrevisoes.ponto(inicio.plusMinutes(i * 10L), valores[Math.min(i, valores.length - 1)]));
+        }
+        return pontos;
+    }
+
+    private void colocarPrevisao(S3Memoria s3, int id, String hostname, JsonArray pontos, Double minimo, Double maximo) {
+        JsonObject[] metricas = new JsonObject[5];
+        for (int m = 0; m < 5; m++) {
+            JsonObject metrica = new JsonObject();
+            metrica.addProperty("unidade", m < 3 ? "%" : "MiB/s");
+            CalculosPrevisoes.numero(metrica, "limite_minimo", minimo);
+            CalculosPrevisoes.numero(metrica, "limite_maximo", maximo);
+            JsonObject graficos = new JsonObject();
+            graficos.add("previsao", pontos);
+            metrica.add("graficos", graficos);
+            metricas[m] = metrica;
+        }
+        LocalDateTime atualizado = LocalDateTime.of(2026, 11, 11, 14, 0);
+        JsonObject documento = new JsonPrevisoes(s3.cliente, "teste").criarDocumento(1,
+                new Mainframe(id, hostname, List.of()), atualizado, 1, atualizado.plusSeconds(10), metricas);
+        s3.colocar("sptech/03-gold/" + hostname + "/previsoes.json", documento.toString().getBytes(StandardCharsets.UTF_8));
+    }
+
+    private JsonObject resumir(S3Memoria s3, String... hostnames) throws IOException {
+        new JsonPrevisoes(s3.cliente, "teste").publicarResumo("sptech", 1, List.of(hostnames));
+        return s3.json("sptech/03-gold/previsoes/resumo.json");
+    }
+
+    @Test
+    void resumoContaMaquinasDistintasEConcentracaoInterpoladaParaTodasAsMetricas() throws IOException {
+        S3Memoria s3 = new S3Memoria();
+        colocarPrevisao(s3, 1, "A", curva(50, 90, 90, 50), 30.0, 80.0);
+        colocarPrevisao(s3, 2, "B", curva(50, 50, 90, 50), 30.0, 80.0);
+        colocarPrevisao(s3, 3, "C", curva(50), 30.0, 80.0);
+        JsonObject resumo = resumir(s3, "A", "B", "C", "A");
+        for (int m = 0; m < 5; m++) {
+            JsonObject metrica = JsonPrevisoes.metrica(resumo, m);
+            JsonObject indicadores = metrica.getAsJsonObject("indicadores");
+            assertEquals(3, indicadores.get("mainframes_com_previsao").getAsInt());
+            assertEquals(2, indicadores.get("mainframes_com_desvio").getAsInt());
+            assertEquals("2026-11-11T14:10-03:00", indicadores.get("inicio_previsao").getAsString());
+            assertEquals("2026-11-11T20:00-03:00", indicadores.get("fim_previsao").getAsString());
+            JsonObject pico = indicadores.getAsJsonObject("maior_concentracao");
+            assertEquals(2, pico.get("quantidade").getAsInt());
+            assertEquals("2026-11-11T14:27-03:00", pico.get("inicio").getAsString());
+            assertEquals("2026-11-11T14:33-03:00", pico.get("fim").getAsString());
+            assertEquals(3, metrica.getAsJsonArray("mainframes").size());
+            assertEquals("Acima do máximo", metrica.getAsJsonArray("mainframes").get(0).getAsJsonObject().get("situacao").getAsString());
+        }
+        assertEquals(Set.of("sptech/03-gold/previsoes/resumo.json", "sptech/03-gold/A/previsoes.json",
+                "sptech/03-gold/B/previsoes.json", "sptech/03-gold/C/previsoes.json"), s3.leituras);
+    }
+
+    @Test
+    void limitesIguaisSaoDentroDaFaixaESemDesviosEnviaConcentracaoNula() throws IOException {
+        S3Memoria s3 = new S3Memoria();
+        colocarPrevisao(s3, 1, "A", curva(30, 80, 30), 30.0, 80.0);
+        JsonObject metrica = JsonPrevisoes.metrica(resumir(s3, "A"), 0);
+        JsonObject indicadores = metrica.getAsJsonObject("indicadores");
+        assertEquals(1, indicadores.get("mainframes_com_previsao").getAsInt());
+        assertEquals(0, indicadores.get("mainframes_com_desvio").getAsInt());
+        assertTrue(indicadores.get("maior_concentracao").isJsonNull());
+        assertEquals("Dentro da faixa", metrica.getAsJsonArray("mainframes").get(0).getAsJsonObject().get("situacao").getAsString());
+    }
+
+    @Test
+    void desviosAbaixoEAcimaContamUmaMaquinaESemSomarIntervalosQueSoEncostam() throws IOException {
+        S3Memoria s3 = new S3Memoria();
+        colocarPrevisao(s3, 1, "A", curva(20, 30, 50), 30.0, 80.0);
+        colocarPrevisao(s3, 2, "B", curva(80, 80, 90, 50), 30.0, 80.0);
+        JsonObject indicadores = JsonPrevisoes.metrica(resumir(s3, "A", "B"), 0).getAsJsonObject("indicadores");
+        assertEquals(2, indicadores.get("mainframes_com_desvio").getAsInt());
+        assertEquals(1, indicadores.getAsJsonObject("maior_concentracao").get("quantidade").getAsInt());
+        assertEquals("2026-11-11T14:10-03:00", indicadores.getAsJsonObject("maior_concentracao").get("inicio").getAsString());
+        assertEquals("2026-11-11T14:33-03:00", indicadores.getAsJsonObject("maior_concentracao").get("fim").getAsString());
+        colocarPrevisao(s3, 1, "A", curva(20, 90, 50), 30.0, 80.0);
+        JsonObject metrica = JsonPrevisoes.metrica(resumir(s3, "A"), 0);
+        assertEquals("Abaixo e acima", metrica.getAsJsonArray("mainframes").get(0).getAsJsonObject().get("situacao").getAsString());
+        assertEquals(1, metrica.getAsJsonObject("indicadores").get("mainframes_com_desvio").getAsInt());
+    }
+
+    @Test
+    void excluiSemLimitesSemArquivoEPrevisoesSemCoberturaCompleta() throws IOException {
+        S3Memoria s3 = new S3Memoria();
+        colocarPrevisao(s3, 1, "SEM_LIMITE", curva(90), null, null);
+        colocarPrevisao(s3, 2, "SEM_PREVISAO", new JsonArray(), 30.0, 80.0);
+        JsonArray parcial = curva(50);
+        parcial.remove(parcial.size() - 1);
+        colocarPrevisao(s3, 3, "PARCIAL", parcial, 30.0, 80.0);
+        JsonObject metrica = JsonPrevisoes.metrica(resumir(s3, "SEM_LIMITE", "SEM_PREVISAO", "PARCIAL", "AUSENTE"), 0);
+        assertEquals(0, metrica.getAsJsonObject("indicadores").get("mainframes_com_previsao").getAsInt());
+        assertEquals(0, metrica.getAsJsonObject("indicadores").get("mainframes_com_desvio").getAsInt());
+        for (JsonElement linha : metrica.getAsJsonArray("mainframes")) assertTrue(linha.getAsJsonObject().get("situacao").isJsonNull());
+        assertTrue(metrica.getAsJsonArray("mainframes").get(2).getAsJsonObject().get("menor_previsto").isJsonNull());
+    }
+
+    @Test
+    void empateEscolhePrimeiroIntervaloEJanelaNaoMudaAoTrocarMetrica() throws IOException {
+        S3Memoria s3 = new S3Memoria();
+        colocarPrevisao(s3, 1, "A", curva(90, 50, 50, 90, 50), 30.0, 80.0);
+        JsonObject resumo = resumir(s3, "A");
+        JsonObject indicadores = JsonPrevisoes.metrica(resumo, 0).getAsJsonObject("indicadores");
+        assertEquals("2026-11-11T14:10-03:00", indicadores.getAsJsonObject("maior_concentracao").get("inicio").getAsString());
+        assertEquals("2026-11-11T14:13-03:00", indicadores.getAsJsonObject("maior_concentracao").get("fim").getAsString());
+        assertEquals(indicadores, JsonPrevisoes.metrica(resumo, 4).getAsJsonObject("indicadores"));
+    }
+
+    @Test
+    void resumoSemDocumentosLimpaResultadosAnteriores() throws IOException {
+        S3Memoria s3 = new S3Memoria();
+        colocarPrevisao(s3, 1, "A", curva(90), 30.0, 80.0);
+        resumir(s3, "A");
+        JsonObject metrica = JsonPrevisoes.metrica(resumir(s3), 0);
+        assertEquals(0, metrica.getAsJsonArray("mainframes").size());
+        assertEquals(0, metrica.getAsJsonObject("indicadores").get("mainframes_com_previsao").getAsInt());
+        assertTrue(metrica.getAsJsonObject("indicadores").get("maior_concentracao").isJsonNull());
     }
 }

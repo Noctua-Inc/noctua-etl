@@ -11,18 +11,11 @@ import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.time.Instant;
-import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 
 public class Silver2Gold {
-    private DateTimeFormatter formato = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH:mm");
-
-    public Silver2Gold() {
-    }
-
     public String searchingFileCsv() {
         Dotenv dotenv = Dotenv.load();
         S3Client s3Client = new S3Provider().getS3Client();
@@ -34,16 +27,13 @@ public class Silver2Gold {
                     .bucket(bucketName)
                     .build();
 
-            Instant maisRecente = Instant.MIN;
             for (S3Object object : s3Client.listObjectsV2Paginator(requisicao).contents()) {
                 if (object.key().endsWith(".csv")
                         && object.key().contains("/02-silver/")
                         && !object.key().contains("processos")
                         && !object.key().endsWith("_historico.csv")
-//                        && object.lastModified().isAfter(maisRecente)
                 ) {
                     collectedFile = object.key();
-                    maisRecente = object.lastModified();
                 }
             }
         } catch (S3Exception e) {

@@ -107,40 +107,53 @@ public class JsonPrevisoes {
             for (String hostname : hostnames) {
                 JsonObject documento = ler(empresa + "/03-gold/" + hostname + "/previsoes.json").getDados();
                 if (!documento.has("componentes")) continue;
+                boolean jaIncluida = false;
+                for (JsonElement existente : documentos) {
+                    if (existente.getAsJsonObject().get("id_mainframe").getAsInt()
+                            == documento.get("id_mainframe").getAsInt()) {
+                        jaIncluida = true;
+                        break;
+                    }
+                }
+                if (jaIncluida) continue;
                 documentos.add(documento);
                 LocalDateTime data = CalculosPrevisoes.data(documento.get("atualizado_em").getAsString());
                 if (referencia == null || data.isAfter(referencia)) referencia = data;
             }
-            if (referencia == null) return;
+            if (referencia == null) referencia = LocalDateTime.now(CalculosPrevisoes.FUSO).withSecond(0).withNano(0);
             JsonObject resumo = new JsonObject();
             resumo.addProperty("id_empresa", idEmpresa);
             resumo.addProperty("atualizado_em", CalculosPrevisoes.horario(referencia));
+            LocalDateTime inicio = referencia.plusMinutes(10 - referencia.getMinute() % 10);
+            LocalDateTime fim = CalculosPrevisoes.fimGrafico(referencia);
+            int minutos = (int) Duration.between(inicio, fim).toMinutes();
             JsonObject componentes = new JsonObject();
             for (int m = 0; m < 5; m++) {
                 JsonObject grupo = m < 3 ? new JsonObject() : componentes.getAsJsonObject("disco");
                 JsonObject resultado = new JsonObject();
                 resultado.addProperty("unidade", m < 3 ? "%" : "MiB/s");
                 JsonArray linhas = new JsonArray();
+                int comPrevisao = 0, comDesvio = 0;
+                int[] concentracao = new int[minutos];
                 for (JsonElement elemento : documentos) {
                     JsonObject documento = elemento.getAsJsonObject();
                     JsonObject metrica = metrica(documento, m);
+                    JsonArray previsao = metrica.getAsJsonObject("graficos").getAsJsonArray("previsao");
+                    Double[] valores = new Double[minutos + 1];
+                    boolean cobrePeriodo = true;
                     Double menor = null, maior = null;
-                    for (JsonElement p : metrica.getAsJsonObject("graficos").getAsJsonArray("previsao")) {
-                        JsonObject ponto = p.getAsJsonObject();
-                        LocalDateTime horario = CalculosPrevisoes.data(ponto.get("horario").getAsString());
-                        if (horario.isAfter(referencia) && !horario.isAfter(CalculosPrevisoes.fimGrafico(referencia))) {
-                            double valor = ponto.get("valor").getAsDouble();
-                            if (menor == null) {
-                                menor = valor;
-                            } else {
-                                menor = Math.min(menor, valor);
-                            }
-                            if (maior == null) {
-                                maior = valor;
-                            } else {
-                                maior = Math.max(maior, valor);
-                            }
+                    for (int i = 0; i <= minutos; i++) {
+                        valores[i] = valorPrevisto(previsao, inicio.plusMinutes(i));
+                        if (valores[i] == null) {
+                            cobrePeriodo = false;
+                        } else {
+                            menor = menor == null ? valores[i] : Math.min(menor, valores[i]);
+                            maior = maior == null ? valores[i] : Math.max(maior, valores[i]);
                         }
+                    }
+                    if (!cobrePeriodo) {
+                        menor = null;
+                        maior = null;
                     }
                     JsonObject linha = new JsonObject();
                     linha.add("id_mainframe", documento.get("id_mainframe"));
@@ -162,11 +175,23 @@ public class JsonPrevisoes {
                         } else {
                             situacao = "Dentro da faixa";
                         }
+                        comPrevisao++;
+                        if (abaixo || acima) comDesvio++;
+                        double minimo = metrica.get("limite_minimo").getAsDouble();
+                        double maximo = metrica.get("limite_maximo").getAsDouble();
+                        // Cada posição representa [minuto, minuto seguinte), mesmo ao cruzar o limite entre pontos.
+                        for (int i = 0; i < minutos; i++) {
+                            if (Math.min(valores[i], valores[i + 1]) < minimo
+                                    || Math.max(valores[i], valores[i + 1]) > maximo) {
+                                concentracao[i]++;
+                            }
+                        }
                     }
                     linha.addProperty("situacao", situacao);
                     linhas.add(linha);
                 }
                 resultado.add("mainframes", linhas);
+                resultado.add("indicadores", indicadoresEmpresa(inicio, fim, comPrevisao, comDesvio, concentracao));
                 if (m < 2) {
                     grupo.add("uso", resultado);
                 } else {
@@ -178,5 +203,57 @@ public class JsonPrevisoes {
             if (gravar(chave, resumo, anterior.getEtag())) return;
         }
         throw new IOException("O resumo mudou durante o envio. Reexecute este evento.");
+    }
+
+    private Double valorPrevisto(JsonArray pontos, LocalDateTime horario) {
+        JsonObject anterior = null;
+        for (JsonElement elemento : pontos) {
+            JsonObject ponto = elemento.getAsJsonObject();
+            LocalDateTime data = CalculosPrevisoes.data(ponto.get("horario").getAsString());
+            if (data.equals(horario)) {
+                return ponto.get("valor").isJsonNull() ? null : ponto.get("valor").getAsDouble();
+            }
+            if (data.isAfter(horario)) {
+                if (anterior == null || anterior.get("valor").isJsonNull() || ponto.get("valor").isJsonNull()) return null;
+                LocalDateTime inicio = CalculosPrevisoes.data(anterior.get("horario").getAsString());
+                double fracao = (double) Duration.between(inicio, horario).toSeconds()
+                        / Duration.between(inicio, data).toSeconds();
+                double primeiro = anterior.get("valor").getAsDouble();
+                return primeiro + (ponto.get("valor").getAsDouble() - primeiro) * fracao;
+            }
+            anterior = ponto;
+        }
+        return null;
+    }
+
+    private JsonObject indicadoresEmpresa(LocalDateTime inicio, LocalDateTime fim, int comPrevisao,
+                                         int comDesvio, int[] concentracao) {
+        JsonObject indicadores = new JsonObject();
+        indicadores.addProperty("inicio_previsao", CalculosPrevisoes.horario(inicio));
+        indicadores.addProperty("fim_previsao", CalculosPrevisoes.horario(fim));
+        indicadores.addProperty("mainframes_com_previsao", comPrevisao);
+        indicadores.addProperty("mainframes_com_desvio", comDesvio);
+        int maior = 0, primeiro = 0, ultimo = 0;
+        for (int i = 0; i < concentracao.length; i++) {
+            int quantidade = concentracao[i];
+            int finalIntervalo = i + 1;
+            while (finalIntervalo < concentracao.length && concentracao[finalIntervalo] == quantidade) finalIntervalo++;
+            if (quantidade > maior) {
+                maior = quantidade;
+                primeiro = i;
+                ultimo = finalIntervalo;
+            }
+            i = finalIntervalo - 1;
+        }
+        if (maior == 0) {
+            indicadores.add("maior_concentracao", JsonNull.INSTANCE);
+        } else {
+            JsonObject intervalo = new JsonObject();
+            intervalo.addProperty("inicio", CalculosPrevisoes.horario(inicio.plusMinutes(primeiro)));
+            intervalo.addProperty("fim", CalculosPrevisoes.horario(inicio.plusMinutes(ultimo)));
+            intervalo.addProperty("quantidade", maior);
+            indicadores.add("maior_concentracao", intervalo);
+        }
+        return indicadores;
     }
 }

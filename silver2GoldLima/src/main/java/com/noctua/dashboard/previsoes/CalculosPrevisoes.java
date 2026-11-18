@@ -157,14 +157,24 @@ public class CalculosPrevisoes {
         double[] erros = new double[3];
         int[] quantidades = new int[3];
         int ultimo = indice(atual);
+
         for (int horas : new int[]{48, 36, 24, 12}) {
             int origem = ultimo - horas * 60;
-            if (!Double.isFinite(valor(metrica, origem))) continue;
+
+            if (!Double.isFinite(valor(metrica, origem))) {
+                continue;
+            }
+
             for (int horizonte : new int[]{10, 60, 180, 360}) {
                 double real = valor(metrica, origem + horizonte);
-                if (!Double.isFinite(real)) continue;
+
+                if (!Double.isFinite(real)) {
+                    continue;
+                }
+
                 for (int modelo = 0; modelo < 3; modelo++) {
                     double previsto = prever(metrica, origem, origem + horizonte, modelo);
+
                     if (Double.isFinite(previsto)) {
                         erros[modelo] += Math.abs(real - previsto);
                         quantidades[modelo]++;
@@ -209,7 +219,7 @@ public class CalculosPrevisoes {
         JsonArray previsao = new JsonArray();
         LocalDateTime futuro = atual.plusMinutes(10 - atual.getMinute() % 10);
         for (; !futuro.isAfter(fimGrafico(atual)); futuro = futuro.plusMinutes(10)) {
-            // Só publicamos pontos que ainda eram futuros no momento desta execução.
+
             if (!futuro.isAfter(gerado)) continue;
             double valor = prever(metrica, indice(atual), indice(futuro), modelo);
             if (!Double.isFinite(valor)) valor = valor(metrica, indice(atual));
