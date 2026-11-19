@@ -1,0 +1,188 @@
+package school.sptech;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeMap;
+import java.util.TreeSet;
+
+public class Ouro {
+
+    static class Linha {
+        String host;
+        String minutoTexto;
+        LocalDateTime minuto;
+        double cpu;
+        double ram;
+        double disco;
+    }
+
+    public static void gerar() throws IOException {
+        DateTimeFormatter formato = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+
+        List<String> arquivo = Files.readAllLines(Paths.get("prata/prata.csv"));
+        List<Linha> todas = new ArrayList<>();
+        Set<String> hostsSet = new TreeSet<>();
+        LocalDateTime maisRecente = null;
+
+        for (int i = 1; i < arquivo.size(); i++) {
+            String[] c = arquivo.get(i).split(",");
+
+            Linha l = new Linha();
+            l.host = c[0];
+            l.minutoTexto = c[1];
+            l.minuto = LocalDateTime.parse(c[1], formato);
+            l.cpu = Double.parseDouble(c[2]);
+            l.ram = Double.parseDouble(c[3]);
+            l.disco = Double.parseDouble(c[4]);
+            todas.add(l);
+
+            hostsSet.add(l.host);
+            if (maisRecente == null || l.minuto.isAfter(maisRecente)) {
+                maisRecente = l.minuto;
+            }
+        }
+
+        if (todas.isEmpty()) {
+            System.out.println("[OURO] prata vazia, nada a fazer.");
+            return;
+        }
+
+        List<String> hosts = new ArrayList<>();
+        hosts.add("todos");
+        hosts.addAll(hostsSet);
+
+        String[] periodos = {"24", "7", "30"};
+        long[] horas = {24, 168, 720};
+
+        List<String> kpis = new ArrayList<>();
+        kpis.add("periodo,mainframe,recursos,correlacao,classificacao,interpretacao");
+
+        List<String> evolucao = new ArrayList<>();
+        evolucao.add("periodo,mainframe,rotulo,cpu,ram,disco");
+
+        for (int p = 0; p < periodos.length; p++) {
+            LocalDateTime inicio = maisRecente.minusHours(horas[p]);
+
+            for (String host : hosts) {
+
+                List<Linha> sel = new ArrayList<>();
+                for (Linha l : todas) {
+                    boolean noPeriodo = !l.minuto.isBefore(inicio);
+                    boolean mesmoHost = host.equals("todos") || l.host.equals(host);
+                    if (noPeriodo && mesmoHost) {
+                        sel.add(l);
+                    }
+                }
+
+                if (sel.size() < 10) {
+                    continue;
+                }
+
+                double[] cpu = new double[sel.size()];
+                double[] ram = new double[sel.size()];
+                double[] disco = new double[sel.size()];
+                for (int i = 0; i < sel.size(); i++) {
+                    cpu[i] = sel.get(i).cpu;
+                    ram[i] = sel.get(i).ram;
+                    disco[i] = sel.get(i).disco;
+                }
+
+                kpis.add(linhaKpi(periodos[p], host, "CPU x RAM", correlacao(cpu, ram)));
+                kpis.add(linhaKpi(periodos[p], host, "CPU x Disco", correlacao(cpu, disco)));
+                kpis.add(linhaKpi(periodos[p], host, "RAM x Disco", correlacao(ram, disco)));
+
+                int tamanho = periodos[p].equals("24") ? 13 : 10;
+                Map<String, double[]> grupos = new TreeMap<>();
+
+                for (Linha l : sel) {
+                    String chave = l.minutoTexto.substring(0, tamanho);
+                    double[] soma = grupos.get(chave);
+                    if (soma == null) {
+                        soma = new double[4];
+                        grupos.put(chave, soma);
+                    }
+                    soma[0] += l.cpu;
+                    soma[1] += l.ram;
+                    soma[2] += l.disco;
+                    soma[3] += 1;
+                }
+
+                for (Map.Entry<String, double[]> g : grupos.entrySet()) {
+                    double[] s = g.getValue();
+                    evolucao.add(periodos[p] + "," + host + "," + g.getKey() + ","
+                            + numero(s[0] / s[3]) + ","
+                            + numero(s[1] / s[3]) + ","
+                            + numero(s[2] / s[3]));
+                }
+            }
+        }
+
+        Files.createDirectories(Paths.get("ouro"));
+        Files.write(Paths.get("ouro/ouro_correlacao.csv"), kpis);
+        Files.write(Paths.get("ouro/ouro_evolucao.csv"), evolucao);
+
+        System.out.println("[OURO] " + (kpis.size() - 1) + " correlações e "
+                + (evolucao.size() - 1) + " pontos de evolução");
+    }
+
+    static double correlacao(double[] x, double[] y) {
+        int n = x.length;
+
+        double somaX = 0;
+        double somaY = 0;
+        for (int i = 0; i < n; i++) {
+            somaX += x[i];
+            somaY += y[i];
+        }
+        double mediaX = somaX / n;
+        double mediaY = somaY / n;
+
+        double cima = 0;
+        double baixoX = 0;
+        double baixoY = 0;
+        for (int i = 0; i < n; i++) {
+            cima += (x[i] - mediaX) * (y[i] - mediaY);
+            baixoX += (x[i] - mediaX) * (x[i] - mediaX);
+            baixoY += (y[i] - mediaY) * (y[i] - mediaY);
+        }
+
+        if (baixoX == 0 || baixoY == 0) {
+            return Double.NaN;
+        }
+        return cima / Math.sqrt(baixoX * baixoY);
+    }
+
+    static String linhaKpi(String periodo, String host, String recursos, double r) {
+        String classe;
+        String texto;
+
+        if (Double.isNaN(r)) {
+            classe = "Sem dados";
+            texto = "Dados insuficientes para calcular.";
+        } else if (Math.abs(r) >= 0.7) {
+            classe = "Alta";
+            texto = "Alta relação entre os recursos.";
+        } else if (Math.abs(r) >= 0.4) {
+            classe = "Moderada";
+            texto = "Relação moderada.";
+        } else {
+            classe = "Fraca";
+            texto = "Relação fraca.";
+        }
+
+        String valor = Double.isNaN(r) ? "" : numero(r);
+        return periodo + "," + host + "," + recursos + "," + valor + "," + classe + "," + texto;
+    }
+
+    static String numero(double v) {
+        return String.format(Locale.US, "%.2f", v);
+    }
+}
