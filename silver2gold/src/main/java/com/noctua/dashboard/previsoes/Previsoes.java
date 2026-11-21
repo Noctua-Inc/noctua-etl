@@ -5,7 +5,6 @@ import com.google.gson.JsonObject;
 import com.noctua.conection.bucket.S3Provider;
 import com.noctua.conection.jdbc.DBConnectionProvider;
 import com.noctua.model.ConsultasPrevisoes;
-import com.noctua.model.Limite;
 import com.noctua.model.Mainframe;
 import io.github.cdimascio.dotenv.Dotenv;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -69,9 +68,9 @@ public class Previsoes {
 
         JsonObject[] metricas = new JsonObject[5];
         for (int m = 0; m < 5; m++) {
-            Double[] faixa = m < 3 ? buscarFaixa(mainframe.getLimites(), new String[]{"CPU", "RAM", "DISCO"}[m])
-                    : new Double[]{null, null};
-            metricas[m] = calculos.calcular(m, faixa[0], faixa[1], gerado);
+            metricas[m] = calculos.calcular(m, gerado);
+            IndicadoresPrevisao.incluirLimites(metricas[m], mainframe.getLimites(),
+                    m < 3 ? new String[]{"CPU", "RAM", "DISCO"}[m] : "");
         }
 
         JsonObject documento = json.criarDocumento(
@@ -84,29 +83,6 @@ public class Previsoes {
         );
         json.publicar(base + "previsoes.json", documento);
         List<String> hostnames = consultas.buscarHostnamesResumo(idEmpresa);
-        json.publicarResumo(empresa, idEmpresa, hostnames);
-    }
-
-    private Double[] buscarFaixa(List<Limite> limites, String tipo) {
-        Double minimo = null, maximo = null;
-        for (Limite limite : limites) {
-            if (tipo.equalsIgnoreCase(limite.getTipo())) {
-                if (limite.getPicoMin() != null) {
-                    if (minimo == null) {
-                        minimo = limite.getPicoMin().doubleValue();
-                    } else {
-                        minimo = Math.max(minimo, limite.getPicoMin());
-                    }
-                }
-                if (limite.getPicoMax() != null) {
-                    if (maximo == null) {
-                        maximo = limite.getPicoMax().doubleValue();
-                    } else {
-                        maximo = Math.min(maximo, limite.getPicoMax());
-                    }
-                }
-            }
-        }
-        return new Double[]{minimo, maximo};
+        json.publicarResumo(empresa, idEmpresa, hostnames, gerado);
     }
 }

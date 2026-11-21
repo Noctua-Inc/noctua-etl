@@ -101,18 +101,6 @@ public class CalculosPrevisoes {
         return Math.max(0, Math.min(100, valor));
     }
 
-    private double mediana(ArrayList<Double> valores) {
-        if (valores.isEmpty()) return Double.NaN;
-        Collections.sort(valores);
-        int meio = valores.size() / 2;
-        if (valores.size() % 2 == 1) return valores.get(meio);
-        return (valores.get(meio - 1) + valores.get(meio)) / 2;
-    }
-
-    private int primeiroMinutoDaSemana() {
-        return Math.max(0, minutos.length - 1 - 7 * MINUTOS_POR_DIA);
-    }
-
     private int tipoDeDia(int minuto) {
         return inicio.plusMinutes(minuto).getDayOfWeek().getValue() >= 6 ? 1 : 0;
     }
@@ -159,7 +147,7 @@ public class CalculosPrevisoes {
         }
     }
 
-    private record AnaliseSazonal(JsonArray anomalias, double desvio, double inclinacao) {}
+    private record AnaliseSazonal(double desvio, double inclinacao) {}
 
     private AnaliseSazonal analisarDesvios(int metrica, PerfilSazonal perfil) {
         int ultimo = indice(atual);
@@ -176,7 +164,6 @@ public class CalculosPrevisoes {
                     : Double.NaN;
         }
 
-        JsonArray anomalias = new JsonArray();
         int sequencia = 0;
         int diaCalibrado = Integer.MIN_VALUE;
         double limite = Double.NaN;
@@ -190,16 +177,9 @@ public class CalculosPrevisoes {
             int direcao = 0;
             if (Math.abs(residuo) > limite) direcao = residuo > 0 ? 1 : -1;
             sequencia = Integer.signum(sequencia) == direcao ? sequencia + direcao : direcao;
-            if (i >= inicioGrafico && Math.abs(sequencia) >= 3) {
-                double observado = valor(metrica, i);
-                JsonObject ponto = ponto(inicio.plusMinutes(i), observado);
-                numero(ponto, "referencia", observado - residuo);
-                numero(ponto, "score", residuo / Math.max(limite, 0.0001));
-                anomalias.add(ponto);
-            }
         }
-        if (Math.abs(sequencia) < 3) return new AnaliseSazonal(anomalias, 0, 0);
-        return new AnaliseSazonal(anomalias, residuos[residuos.length - 1], inclinacaoRecente(residuos, janela));
+        if (Math.abs(sequencia) < 3) return new AnaliseSazonal(0, 0);
+        return new AnaliseSazonal(residuos[residuos.length - 1], inclinacaoRecente(residuos, janela));
     }
 
     private double calibrarFaixa(double[] residuos, int primeiro, int dia, int tipo) {
@@ -236,15 +216,13 @@ public class CalculosPrevisoes {
         return (quantidade * somaXY - somaX * somaY) / denominador;
     }
 
-    public JsonObject calcular(int metrica, Double minimo, Double maximo, LocalDateTime gerado) {
+    public JsonObject calcular(int metrica, LocalDateTime gerado) {
         int origem = indice(atual);
         PerfilSazonal perfil = new PerfilSazonal(metrica);
         AnaliseSazonal analise = analisarDesvios(metrica, perfil);
         boolean usouPerfil = false;
         JsonObject resultado = new JsonObject();
         resultado.addProperty("unidade", metrica < 3 ? "%" : "MiB/s");
-        numero(resultado, "limite_minimo", minimo);
-        numero(resultado, "limite_maximo", maximo);
         JsonObject graficos = new JsonObject();
         JsonArray historico = new JsonArray();
         for (LocalDateTime hora = inicioGrafico(atual); !hora.isAfter(atual); hora = hora.plusHours(1)) {
@@ -271,83 +249,12 @@ public class CalculosPrevisoes {
             previsao.add(ponto);
         }
         graficos.add("previsao", previsao);
-        graficos.add("mapa", mapa(metrica));
         String modelo = "Persistência";
         if (usouPerfil) {
             modelo = analise.desvio() == 0 ? "Perfil diário" : "Perfil diário com regressão linear recente";
         }
         resultado.addProperty("modelo", modelo);
         resultado.add("graficos", graficos);
-        resultado.add("indicadores", indicadores(metrica, previsao, minimo, maximo, gerado));
-        resultado.add("analise", diagnostico(metrica, analise));
-        return resultado;
-    }
-
-    private JsonArray anomaliasDaOcupacao() {
-        int metrica = 2;
-        JsonArray anomalias = new JsonArray();
-        int ultimo = indice(atual);
-        for (int i = Math.max(0, indice(inicioGrafico(atual))); i <= ultimo; i++) {
-            double observado = valor(metrica, i);
-            if (!Double.isFinite(observado)) continue;
-            ArrayList<Double> dias = new ArrayList<>();
-            for (int dia = 1; dia <= 7; dia++) {
-                ArrayList<Double> valores = new ArrayList<>();
-                for (int j = i - dia * 1440 - 10; j <= i - dia * 1440 + 10; j++) {
-                    double valor = valor(metrica, j);
-                    if (j >= primeiroMinutoDaSemana() && Double.isFinite(valor)) valores.add(valor);
-                }
-                if (!valores.isEmpty()) dias.add(mediana(valores));
-            }
-            if (dias.size() < 3) continue;
-            double centro = mediana(dias);
-            ArrayList<Double> distancias = new ArrayList<>();
-            for (double valor : dias) distancias.add(Math.abs(valor - centro));
-            double mad = mediana(distancias);
-            // O piso de 1 p.p. permite analisar séries praticamente constantes.
-            double dispersao = Math.max(1, mad / 0.6745);
-            double score = (observado - centro) / dispersao;
-            if (Math.abs(score) > 3.5) {
-                JsonObject ponto = ponto(inicio.plusMinutes(i), observado);
-                numero(ponto, "referencia", centro);
-                numero(ponto, "score", score);
-                anomalias.add(ponto);
-            }
-        }
-        return anomalias;
-    }
-
-    private JsonObject diagnostico(int metrica, AnaliseSazonal analise) {
-        JsonObject resultado = new JsonObject();
-        resultado.add("anomalias_observadas", metrica == 2 ? anomaliasDaOcupacao() : analise.anomalias());
-        resultado.addProperty("tipo_anomalia", metrica == 2
-                ? "Desvio das médias de minuto frente ao mesmo horário de dias anteriores"
-                : "Três ou mais minutos seguidos fora da faixa histórica para dias semelhantes");
-        JsonArray correlacoes = new JsonArray();
-        for (int outra = 0; outra < NOMES.length; outra++) {
-            if (outra == metrica) continue;
-            double sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0;
-            int n = 0;
-            for (int i = primeiroMinutoDaSemana(); i < minutos.length; i++) {
-                double x = valor(metrica, i), y = valor(outra, i);
-                if (Double.isFinite(x) && Double.isFinite(y)) {
-                    sx += x; sy += y; sxx += x * x; syy += y * y; sxy += x * y; n++;
-                }
-            }
-            double denominador = Math.sqrt(Math.max(0, n * sxx - sx * sx) * Math.max(0, n * syy - sy * sy));
-            JsonObject item = new JsonObject();
-            item.addProperty("componente", NOMES[outra]);
-            Double pearson;
-            if (n < 30 || denominador == 0) {
-                pearson = null;
-            } else {
-                pearson = Math.max(-1, Math.min(1, (n * sxy - sx * sy) / denominador));
-            }
-            numero(item, "pearson", pearson);
-            item.addProperty("pares", n);
-            correlacoes.add(item);
-        }
-        resultado.add("correlacoes", correlacoes);
         return resultado;
     }
 
@@ -363,82 +270,5 @@ public class CalculosPrevisoes {
         } else {
             return soma / quantidade;
         }
-    }
-
-    private JsonArray mapa(int metrica) {
-        JsonArray mapa = new JsonArray();
-        LocalDate primeiro = atual.toLocalDate().minusDays(6);
-        for (int dia = 0; dia < 7; dia++) {
-            LocalDate data = primeiro.plusDays(dia);
-            for (int hora = 0; hora < 24; hora++) {
-                Double valor = media(metrica, data.atTime(hora, 0), data.atTime(hora, 0).plusHours(1));
-                JsonObject ponto = new JsonObject();
-                ponto.addProperty("dia", data.toString());
-                ponto.addProperty("hora", hora);
-                numero(ponto, "media", valor);
-                Double intensidade;
-                if (valor == null) {
-                    intensidade = null;
-                } else {
-                    intensidade = limitar(valor) / 100;
-                }
-                numero(ponto, "intensidade", intensidade);
-                mapa.add(ponto);
-            }
-        }
-        return mapa;
-    }
-
-    private JsonObject indicadores(int metrica, JsonArray pontos, Double minimo, Double maximo, LocalDateTime gerado) {
-        JsonObject indicadores = new JsonObject();
-        Double maior = null, menor = null;
-        Integer minutos = null;
-        String tipo = null;
-        double atual = valor(metrica, indice(this.atual));
-        if (minimo != null && atual < minimo) { minutos = 0; tipo = "abaixo"; }
-        else if (maximo != null && atual > maximo) { minutos = 0; tipo = "acima"; }
-        int minutoAnterior = 0;
-        double valorAnterior = atual;
-        for (JsonElement elemento : pontos) {
-            JsonObject ponto = elemento.getAsJsonObject();
-            if (ponto.get("valor").isJsonNull()) continue;
-            double valor = ponto.get("valor").getAsDouble();
-            int minuto = indice(data(ponto.get("horario").getAsString())) - indice(this.atual);
-            if (maior == null) {
-                maior = valor;
-            } else {
-                maior = Math.max(maior, valor);
-            }
-            if (menor == null) {
-                menor = valor;
-            } else {
-                menor = Math.min(menor, valor);
-            }
-            if (minutos == null && ((minimo != null && valor < minimo) || (maximo != null && valor > maximo))) {
-                boolean abaixo = minimo != null && valor < minimo;
-                tipo = abaixo ? "abaixo" : "acima";
-                minutos = minuto;
-                if (Double.isFinite(valorAnterior) && minuto - minutoAnterior <= 10) {
-                    double limite = abaixo ? minimo : maximo;
-                    double cruzamento = minutoAnterior
-                            + (limite - valorAnterior) / (valor - valorAnterior) * (minuto - minutoAnterior);
-                    int primeiroFuturo = Math.max(1, indice(gerado) - indice(this.atual) + 1);
-                    minutos = Math.min(minuto, Math.max(primeiroFuturo, (int) Math.floor(cruzamento + 1e-9) + 1));
-                }
-            }
-            minutoAnterior = minuto;
-            valorAnterior = valor;
-        }
-        numero(indicadores, "maior_previsto", maior);
-        numero(indicadores, "menor_previsto", menor);
-        Double minutosAteSaida;
-        if (minutos == null) {
-            minutosAteSaida = null;
-        } else {
-            minutosAteSaida = minutos.doubleValue();
-        }
-        numero(indicadores, "primeira_saida_em_minutos", minutosAteSaida);
-        indicadores.addProperty("primeira_saida_tipo", tipo);
-        return indicadores;
     }
 }

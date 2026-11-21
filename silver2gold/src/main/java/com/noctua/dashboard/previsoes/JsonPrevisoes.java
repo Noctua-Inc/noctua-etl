@@ -12,7 +12,11 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.time.*;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
+import java.util.Set;
 
 public class JsonPrevisoes {
     private final S3Client s3;
@@ -90,170 +94,101 @@ public class JsonPrevisoes {
                 if (dataAtual.isAfter(dataNova)) return;
                 if (dataAtual.equals(dataNova) && atual.getDados().has("capturas_no_minuto")
                         && atual.getDados().get("capturas_no_minuto").getAsInt() > novo.get("capturas_no_minuto").getAsInt()) return;
-                if (dataAtual.equals(dataNova) && CalculosPrevisoes.data(atual.getDados().get("gerado_em").getAsString())
-                        .isAfter(CalculosPrevisoes.data(novo.get("gerado_em").getAsString()))) return;
+                LocalDateTime geracaoAtual = IndicadoresPrevisao.lerData(atual.getDados(), "gerado_em");
+                LocalDateTime geracaoNova = IndicadoresPrevisao.lerData(novo, "gerado_em");
+                if (dataAtual.equals(dataNova) && geracaoAtual != null) {
+                    if (geracaoAtual.isAfter(geracaoNova)) return;
+                    if (geracaoAtual.equals(geracaoNova) && mesmaPrevisao(atual.getDados(), novo)) return;
+                }
             }
-            if (gravar(chave, novo, atual.getEtag())) return;
-        }
+            IndicadoresPrevisao.preencherMainframe(novo, atual.getDados());
+            if (Objects.equals(atual.getDados(), novo) || gravar(chave, novo, atual.getEtag())) return;
+        } 
         throw new IOException("O documento da mainframe mudou durante o envio. Reexecute este evento.");
     }
 
-    public void publicarResumo(String empresa, int idEmpresa, List<String> hostnames) throws IOException {
+    private boolean mesmaPrevisao(JsonObject anterior, JsonObject novo) {
+        if (!versaoDois(anterior) || !Objects.equals(anterior.get("capturas_no_minuto"), novo.get("capturas_no_minuto"))) {
+            return false;
+        }
+        for (int m = 0; m < CalculosPrevisoes.NOMES.length; m++) {
+            JsonObject previa = metrica(anterior, m);
+            JsonObject atual = metrica(novo, m);
+            if (!previa.get("graficos").equals(atual.get("graficos"))
+                    || !previa.get("limite_minimo").equals(atual.get("limite_minimo"))
+                    || !previa.get("limite_maximo").equals(atual.get("limite_maximo"))) return false;
+        }
+        return true;
+    }
+
+    public void publicarResumo(String empresa, int idEmpresa, List<String> hostnames, LocalDateTime gerado) throws IOException {
         String chave = empresa + "/03-gold/previsoes/resumo.json";
+        List<String> cadastradas = hostnames.stream().distinct().toList();
         for (int tentativa = 0; tentativa < 4; tentativa++) {
             ArquivoJson anterior = ler(chave);
-            JsonArray documentos = new JsonArray();
+            List<JsonObject> documentos = new ArrayList<>();
+            Set<Integer> ids = new HashSet<>();
             LocalDateTime referencia = null;
-            for (String hostname : hostnames) {
+            for (String hostname : cadastradas) {
                 JsonObject documento = ler(empresa + "/03-gold/" + hostname + "/previsoes.json").getDados();
-                if (!documento.has("componentes")) continue;
-                boolean jaIncluida = false;
-                for (JsonElement existente : documentos) {
-                    if (existente.getAsJsonObject().get("id_mainframe").getAsInt()
-                            == documento.get("id_mainframe").getAsInt()) {
-                        jaIncluida = true;
-                        break;
-                    }
-                }
-                if (jaIncluida) continue;
+                if (!documento.has("componentes") || !ids.add(documento.get("id_mainframe").getAsInt())) continue;
                 documentos.add(documento);
-                LocalDateTime data = CalculosPrevisoes.data(documento.get("atualizado_em").getAsString());
-                if (referencia == null || data.isAfter(referencia)) referencia = data;
+                LocalDateTime coleta = IndicadoresPrevisao.lerData(documento, "atualizado_em");
+                if (referencia == null || coleta.isAfter(referencia)) referencia = coleta;
             }
-            if (referencia == null) referencia = LocalDateTime.now(CalculosPrevisoes.FUSO).withSecond(0).withNano(0);
-            JsonObject resumo = new JsonObject();
-            resumo.addProperty("id_empresa", idEmpresa);
-            resumo.addProperty("atualizado_em", CalculosPrevisoes.horario(referencia));
-            LocalDateTime inicio = referencia.plusMinutes(10 - referencia.getMinute() % 10);
-            LocalDateTime fim = CalculosPrevisoes.fimGrafico(referencia);
-            int minutos = (int) Duration.between(inicio, fim).toMinutes();
-            JsonObject componentes = new JsonObject();
-            for (int m = 0; m < 5; m++) {
-                JsonObject grupo = m < 3 ? new JsonObject() : componentes.getAsJsonObject("disco");
-                JsonObject resultado = new JsonObject();
-                resultado.addProperty("unidade", m < 3 ? "%" : "MiB/s");
-                JsonArray linhas = new JsonArray();
-                int comPrevisao = 0, comDesvio = 0;
-                int[] concentracao = new int[minutos];
-                for (JsonElement elemento : documentos) {
-                    JsonObject documento = elemento.getAsJsonObject();
-                    JsonObject metrica = metrica(documento, m);
-                    JsonArray previsao = metrica.getAsJsonObject("graficos").getAsJsonArray("previsao");
-                    Double[] valores = new Double[minutos + 1];
-                    boolean cobrePeriodo = true;
-                    Double menor = null, maior = null;
-                    for (int i = 0; i <= minutos; i++) {
-                        valores[i] = valorPrevisto(previsao, inicio.plusMinutes(i));
-                        if (valores[i] == null) {
-                            cobrePeriodo = false;
-                        } else {
-                            menor = menor == null ? valores[i] : Math.min(menor, valores[i]);
-                            maior = maior == null ? valores[i] : Math.max(maior, valores[i]);
-                        }
-                    }
-                    if (!cobrePeriodo) {
-                        menor = null;
-                        maior = null;
-                    }
-                    JsonObject linha = new JsonObject();
-                    linha.add("id_mainframe", documento.get("id_mainframe"));
-                    linha.add("hostname", documento.get("hostname"));
-                    CalculosPrevisoes.numero(linha, "menor_previsto", menor);
-                    CalculosPrevisoes.numero(linha, "maior_previsto", maior);
-                    linha.add("limite_minimo", metrica.get("limite_minimo"));
-                    linha.add("limite_maximo", metrica.get("limite_maximo"));
-                    String situacao = null;
-                    if (menor != null && !metrica.get("limite_minimo").isJsonNull() && !metrica.get("limite_maximo").isJsonNull()) {
-                        boolean abaixo = menor < metrica.get("limite_minimo").getAsDouble();
-                        boolean acima = maior > metrica.get("limite_maximo").getAsDouble();
-                        if (abaixo && acima) {
-                            situacao = "Abaixo e acima";
-                        } else if (abaixo) {
-                            situacao = "Abaixo do mínimo";
-                        } else if (acima) {
-                            situacao = "Acima do máximo";
-                        } else {
-                            situacao = "Dentro da faixa";
-                        }
-                        comPrevisao++;
-                        if (abaixo || acima) comDesvio++;
-                        double minimo = metrica.get("limite_minimo").getAsDouble();
-                        double maximo = metrica.get("limite_maximo").getAsDouble();
-                        // Cada posição representa [minuto, minuto seguinte), mesmo ao cruzar o limite entre pontos.
-                        for (int i = 0; i < minutos; i++) {
-                            if (Math.min(valores[i], valores[i + 1]) < minimo
-                                    || Math.max(valores[i], valores[i + 1]) > maximo) {
-                                concentracao[i]++;
-                            }
-                        }
-                    }
-                    linha.addProperty("situacao", situacao);
-                    linhas.add(linha);
-                }
-                resultado.add("mainframes", linhas);
-                resultado.add("indicadores", indicadoresEmpresa(inicio, fim, comPrevisao, comDesvio, concentracao));
-                if (m < 2) {
-                    grupo.add("uso", resultado);
-                } else {
-                    grupo.add(CalculosPrevisoes.NOMES[m], resultado);
-                }
-                componentes.add(new String[]{"cpu", "ram", "disco", "disco", "disco"}[m], grupo);
-            }
-            resumo.add("componentes", componentes);
+            if (referencia == null) referencia = gerado.withSecond(0).withNano(0);
+            JsonObject resumo = montarResumo(idEmpresa, cadastradas.size(), documentos, referencia, gerado, anterior.getDados());
+            if (mesmoResumo(anterior.getDados(), resumo)) return;
             if (gravar(chave, resumo, anterior.getEtag())) return;
         }
         throw new IOException("O resumo mudou durante o envio. Reexecute este evento.");
     }
 
-    private Double valorPrevisto(JsonArray pontos, LocalDateTime horario) {
-        JsonObject anterior = null;
-        for (JsonElement elemento : pontos) {
-            JsonObject ponto = elemento.getAsJsonObject();
-            LocalDateTime data = CalculosPrevisoes.data(ponto.get("horario").getAsString());
-            if (data.equals(horario)) {
-                return ponto.get("valor").isJsonNull() ? null : ponto.get("valor").getAsDouble();
+    private JsonObject montarResumo(int idEmpresa, int cadastradas, List<JsonObject> documentos,
+                                    LocalDateTime referencia, LocalDateTime gerado, JsonObject anterior) {
+        LocalDateTime inicio = IndicadoresPrevisao.passoSeguinte(referencia);
+        LocalDateTime fim = CalculosPrevisoes.fimGrafico(referencia);
+        boolean comparavel = versaoDois(anterior) && anterior.get("id_empresa").getAsInt() == idEmpresa;
+        LocalDateTime geradoAnterior = comparavel ? IndicadoresPrevisao.lerData(anterior, "gerado_em") : null;
+        LocalDateTime geracaoResumo = geradoAnterior != null && geradoAnterior.isAfter(gerado) ? geradoAnterior : gerado;
+        JsonObject resumo = new JsonObject();
+        resumo.addProperty("versao_schema", 2);
+        resumo.addProperty("id_empresa", idEmpresa);
+        resumo.addProperty("atualizado_em", CalculosPrevisoes.horario(referencia));
+        resumo.addProperty("gerado_em", CalculosPrevisoes.horario(geracaoResumo));
+        resumo.addProperty("valido_ate", CalculosPrevisoes.horario(fim));
+        resumo.addProperty("fuso_horario", CalculosPrevisoes.FUSO.getId());
+        JsonObject componentes = new JsonObject();
+        componentes.add("cpu", new JsonObject());
+        componentes.add("ram", new JsonObject());
+        componentes.add("disco", new JsonObject());
+        for (int m = 0; m < CalculosPrevisoes.NOMES.length; m++) {
+            JsonObject resultado = IndicadoresPrevisao.resumirMetrica(documentos, m, cadastradas, inicio, fim,
+                    geracaoResumo, comparavel ? metrica(anterior, m) : null, geradoAnterior);
+            if (m < 2) {
+                componentes.getAsJsonObject(CalculosPrevisoes.NOMES[m]).add("uso", resultado);
+            } else {
+                componentes.getAsJsonObject("disco").add(CalculosPrevisoes.NOMES[m], resultado);
             }
-            if (data.isAfter(horario)) {
-                if (anterior == null || anterior.get("valor").isJsonNull() || ponto.get("valor").isJsonNull()) return null;
-                LocalDateTime inicio = CalculosPrevisoes.data(anterior.get("horario").getAsString());
-                double fracao = (double) Duration.between(inicio, horario).toSeconds()
-                        / Duration.between(inicio, data).toSeconds();
-                double primeiro = anterior.get("valor").getAsDouble();
-                return primeiro + (ponto.get("valor").getAsDouble() - primeiro) * fracao;
-            }
-            anterior = ponto;
         }
-        return null;
+        resumo.add("componentes", componentes);
+        return resumo;
     }
 
-    private JsonObject indicadoresEmpresa(LocalDateTime inicio, LocalDateTime fim, int comPrevisao,
-                                         int comDesvio, int[] concentracao) {
-        JsonObject indicadores = new JsonObject();
-        indicadores.addProperty("inicio_previsao", CalculosPrevisoes.horario(inicio));
-        indicadores.addProperty("fim_previsao", CalculosPrevisoes.horario(fim));
-        indicadores.addProperty("mainframes_com_previsao", comPrevisao);
-        indicadores.addProperty("mainframes_com_desvio", comDesvio);
-        int maior = 0, primeiro = 0, ultimo = 0;
-        for (int i = 0; i < concentracao.length; i++) {
-            int quantidade = concentracao[i];
-            int finalIntervalo = i + 1;
-            while (finalIntervalo < concentracao.length && concentracao[finalIntervalo] == quantidade) finalIntervalo++;
-            if (quantidade > maior) {
-                maior = quantidade;
-                primeiro = i;
-                ultimo = finalIntervalo;
-            }
-            i = finalIntervalo - 1;
+    private boolean mesmoResumo(JsonObject anterior, JsonObject novo) {
+        if (!versaoDois(anterior) || !Objects.equals(anterior.get("atualizado_em"), novo.get("atualizado_em"))) return false;
+        for (int m = 0; m < CalculosPrevisoes.NOMES.length; m++) {
+            JsonObject previa = metrica(anterior, m);
+            JsonObject atual = metrica(novo, m);
+            if (!Objects.equals(previa.get("mainframes"), atual.get("mainframes"))
+                    || !Objects.equals(previa.get("cobertura"), atual.get("cobertura"))
+                    || !previa.getAsJsonObject("indicadores").getAsJsonObject("mainframes_com_desvio").get("status")
+                         .equals(atual.getAsJsonObject("indicadores").getAsJsonObject("mainframes_com_desvio").get("status"))) return false;
         }
-        if (maior == 0) {
-            indicadores.add("maior_concentracao", JsonNull.INSTANCE);
-        } else {
-            JsonObject intervalo = new JsonObject();
-            intervalo.addProperty("inicio", CalculosPrevisoes.horario(inicio.plusMinutes(primeiro)));
-            intervalo.addProperty("fim", CalculosPrevisoes.horario(inicio.plusMinutes(ultimo)));
-            intervalo.addProperty("quantidade", maior);
-            indicadores.add("maior_concentracao", intervalo);
-        }
-        return indicadores;
+        return true;
+    }
+
+    private static boolean versaoDois(JsonObject documento) {
+        return documento.has("versao_schema") && documento.get("versao_schema").getAsInt() == 2;
     }
 }
