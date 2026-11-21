@@ -5,39 +5,56 @@ import java.util.Optional;
 /**
  * Contrato único da camada Silver de processos.
  *
- * O CSV bruto (Bronze) possui 10 colunas, incluindo Memoria_Bytes na posição 6.
- * O CSV da Silver possui 9 colunas: a coluna de bytes é descartada e apenas o
- * valor em MB (posição 7 do Bronze) é mantido, conforme o frontend espera.
+ * Contrato único da camada Silver de processos.
+ * Aceita lotes antigos de 9/10 colunas e lotes novos com CPU global e CPUs lógicas.
  */
 public record ProcessoSilver(
         String captureId, String hostname, String timestamp, Integer pid,
         String processName, Double cpuPercent, Double memoryMb,
-        Long bytesRead, Long bytesWritten
+        Long bytesRead, Long bytesWritten, Double cpuGlobalPercent,
+        Integer logicalCpus
 ) {
     public static final String CABECALHO =
-            "capture_id,hostname,timestamp,pid,process_name,cpu_percent,memory_mb,bytes_read,bytes_written";
+            "capture_id,hostname,timestamp,pid,process_name,cpu_percent,memory_mb,bytes_read,bytes_written,cpu_global_percent,logical_cpus";
 
     public String toCsvLine() {
         return String.join(",",
                 captureId, hostname, timestamp, String.valueOf(pid), processName,
                 String.valueOf(cpuPercent), String.valueOf(memoryMb),
                 bytesRead == null ? "" : String.valueOf(bytesRead),
-                bytesWritten == null ? "" : String.valueOf(bytesWritten)
+                bytesWritten == null ? "" : String.valueOf(bytesWritten),
+                cpuGlobalPercent == null ? "" : String.valueOf(cpuGlobalPercent),
+                logicalCpus == null ? "" : String.valueOf(logicalCpus)
         );
     }
 
-    /** Linha do CSV bruto (Bronze), com 10 colunas. */
+    /** Linha do CSV bruto (Bronze), compatível com lotes antigos e novos. */
     public static Optional<ProcessoSilver> fromBronzeLine(String linhaCsvBruta) {
-        return montar(linhaCsvBruta.split(",", -1), 7, 8, 9);
+        String[] colunas = linhaCsvBruta.split(",", -1);
+        if (colunas.length >= 12) {
+            return montar(colunas, 7, 8, 9, 10, 11);
+        }
+        if (colunas.length >= 10) {
+            return montar(colunas, 7, 8, 9, -1, -1);
+        }
+        return Optional.empty();
     }
 
-    /** Linha do CSV já tratado (Silver), com 9 colunas. */
+    /** Linha do CSV já tratado (Silver), compatível com lotes antigos e novos. */
     public static Optional<ProcessoSilver> fromSilverLine(String linhaCsvSilver) {
-        return montar(linhaCsvSilver.split(",", -1), 6, 7, 8);
+        String[] colunas = linhaCsvSilver.split(",", -1);
+        if (colunas.length >= 11) {
+            return montar(colunas, 6, 7, 8, 9, 10);
+        }
+        if (colunas.length >= 9) {
+            return montar(colunas, 6, 7, 8, -1, -1);
+        }
+        return Optional.empty();
     }
 
     private static Optional<ProcessoSilver> montar(
-            String[] colunas, int indiceMemoriaMb, int indiceLidos, int indiceEscritos) {
+            String[] colunas, int indiceMemoriaMb, int indiceLidos, int indiceEscritos,
+            int indiceCpuGlobal, int indiceCpusLogicos) {
         if (colunas.length <= indiceEscritos) return Optional.empty();
 
         try {
@@ -63,10 +80,19 @@ public record ProcessoSilver(
             // I/O vazio é aceito como nulo (não como zero).
             Long bytesRead = lidosStr.isEmpty() ? null : Long.parseLong(lidosStr);
             Long bytesWritten = escritosStr.isEmpty() ? null : Long.parseLong(escritosStr);
+            Double cpuGlobalPercent = indiceCpuGlobal >= 0
+                    && colunas.length > indiceCpuGlobal
+                    && !colunas[indiceCpuGlobal].trim().isEmpty()
+                    ? Double.parseDouble(colunas[indiceCpuGlobal].trim()) : null;
+            Integer logicalCpus = indiceCpusLogicos >= 0
+                    && colunas.length > indiceCpusLogicos
+                    && !colunas[indiceCpusLogicos].trim().isEmpty()
+                    ? Integer.parseInt(colunas[indiceCpusLogicos].trim()) : null;
 
             return Optional.of(new ProcessoSilver(
                     captureId, hostname, timestamp, pid, processName,
-                    cpuPercent, memoryMb, bytesRead, bytesWritten));
+                    cpuPercent, memoryMb, bytesRead, bytesWritten,
+                    cpuGlobalPercent, logicalCpus));
         } catch (Exception e) {
             // Conversão inválida: a linha vai para a quarentena.
             return Optional.empty();

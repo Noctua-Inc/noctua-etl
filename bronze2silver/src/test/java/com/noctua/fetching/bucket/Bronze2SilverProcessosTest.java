@@ -102,6 +102,6 @@ class Bronze2SilverProcessosTest {
 
     private ProcessoSilver chrome() {
         return new ProcessoSilver("cap1", "MF", "2026-11-11 19:30:00", 123,
-                "chrome", 12.5, 12.5, 1024L, null);
+                "chrome", 12.5, 12.5, 1024L, null, null, null);
     }
 }
