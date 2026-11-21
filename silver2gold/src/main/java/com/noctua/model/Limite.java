@@ -2,8 +2,8 @@ package com.noctua.model;
 
 public class Limite {
     private String tipo;
-    private Integer picoMax;
-    private Integer picoMin;
+    private Double picoMax;
+    private Double picoMin;
 
     public String getTipo() {
         return tipo;
@@ -13,19 +13,19 @@ public class Limite {
         this.tipo = tipo;
     }
 
-    public Integer getPicoMax() {
+    public Double getPicoMax() {
         return picoMax;
     }
 
-    public void setPicoMax(Integer picoMax) {
+    public void setPicoMax(Double picoMax) {
         this.picoMax = picoMax;
     }
 
-    public Integer getPicoMin() {
+    public Double getPicoMin() {
         return picoMin;
     }
 
-    public void setPicoMin(Integer picoMin) {
+    public void setPicoMin(Double picoMin) {
         this.picoMin = picoMin;
     }
 }

@@ -13,7 +13,7 @@ import java.util.TreeMap;
 
 public class EtapaSilverParaGold {
 
-    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+    private static final Gson GSON = new GsonBuilder().serializeNulls().setPrettyPrinting().create();
     private static final double LIMITE_CPU_PROCESSO_ATENCAO = 10.0;
     private static final double LIMITE_MEMORIA_PROCESSO_ATENCAO_MB = 500.0;
 
@@ -29,7 +29,6 @@ public class EtapaSilverParaGold {
         List<ProcessoSilver> processosValidos = todosProcessos.stream()
                 .filter(processo -> processo.pid() != 0)
                 .filter(processo -> !ehProcessoOcioso(processo.processName()))
-                .filter(processo -> processo.cpuPercent() > 0.0)
                 .toList();
 
         if (processosValidos.isEmpty()) return jsonVazio();
@@ -48,7 +47,7 @@ public class EtapaSilverParaGold {
         String ultimoTimestamp = agrupadosPorTempo.lastKey();
         List<ProcessoSilver> ultimosProcessos = agrupadosPorTempo.get(ultimoTimestamp);
 
-        double totalCpu = cpuGlobalOuFallback(ultimosProcessos);
+        Double totalCpu = cpuGlobal(ultimosProcessos);
 
         JsonObject json = new JsonObject();
         json.addProperty("hostname", hostname);
@@ -60,10 +59,11 @@ public class EtapaSilverParaGold {
 
         JsonObject kpis = new JsonObject();
         kpis.addProperty("cpu_percentual", totalCpu);
-        kpis.addProperty("cpu_pico_percentual", arredondar(agrupadosPorTempo.values().stream()
-                .mapToDouble(EtapaSilverParaGold::cpuGlobalOuFallback).max().orElse(0)));
+        kpis.addProperty("cpu_pico_percentual", agrupadosPorTempo.values().stream()
+                .map(EtapaSilverParaGold::cpuGlobal).filter(java.util.Objects::nonNull).max(Double::compare).orElse(null));
         kpis.addProperty("processos_cpu_atencao", ultimosProcessos.stream()
-                .filter(processo -> cpuProcessoNaMaquina(processo) >= LIMITE_CPU_PROCESSO_ATENCAO)
+                .filter(processo -> processo.logicalCpus() != null && processo.logicalCpus() > 0
+                        && cpuProcessoNaMaquina(processo) >= LIMITE_CPU_PROCESSO_ATENCAO)
                 .count());
         kpis.addProperty("processos_capturados", ultimosProcessos.size());
         kpis.addProperty("ultima_captura", ultimoTimestamp);
@@ -128,18 +128,18 @@ public class EtapaSilverParaGold {
         JsonArray escritos = new JsonArray();
 
         for (List<ProcessoSilver> processos : agrupados.values()) {
-            cpu.add(arredondar(cpuGlobalOuFallback(processos)));
+            cpu.add(cpuGlobal(processos));
             memoria.add(arredondar(processos.stream().mapToDouble(ProcessoSilver::memoryMb).sum()));
             lidos.add(totalBytesLidos(processos));
             escritos.add(totalBytesEscritos(processos));
         }
 
-        JsonObject cpuGrafico = grafico(labels, "CPU total", cpu);
-        JsonObject ramGrafico = grafico(labels, "Memória total (MB)", memoria);
-        JsonObject discoGrafico = grafico(labels, "Bytes lidos", lidos);
+        JsonObject cpuGrafico = grafico(labels, "CPU da máquina (%)", cpu);
+        JsonObject ramGrafico = grafico(labels, "Memória dos processos (MiB)", memoria);
+        JsonObject discoGrafico = grafico(labels, "Bytes lidos acumulados", lidos);
         JsonArray discoDatasets = discoGrafico.getAsJsonArray("datasets");
         JsonObject escritosDataset = new JsonObject();
-        escritosDataset.addProperty("label", "Bytes escritos");
+        escritosDataset.addProperty("label", "Bytes escritos acumulados");
         escritosDataset.add("data", escritos);
         discoDatasets.add(escritosDataset);
 
@@ -169,12 +169,14 @@ public class EtapaSilverParaGold {
             item.addProperty("PID", processo.pid());
             item.addProperty("Nome_Processo", processo.processName());
             item.addProperty("CPU_percentual", processo.cpuPercent());
-            item.addProperty("CPU_percentual_maquina", cpuProcessoNaMaquina(processo));
+            item.addProperty("CPU_percentual_maquina", processo.logicalCpus() == null || processo.logicalCpus() < 1
+                    ? null : cpuProcessoNaMaquina(processo));
             item.addProperty("Memoria_MB", processo.memoryMb());
-            item.addProperty("Bytes_Lidos", processo.bytesRead() == null ? 0 : processo.bytesRead());
-            item.addProperty("Bytes_Escritos", processo.bytesWritten() == null ? 0 : processo.bytesWritten());
+            item.addProperty("Bytes_Lidos", processo.bytesRead());
+            item.addProperty("Bytes_Escritos", processo.bytesWritten());
             item.addProperty("Timestamp", processo.timestamp());
-            item.addProperty("status", status(cpuProcessoNaMaquina(processo)));
+            item.addProperty("status", processo.logicalCpus() == null || processo.logicalCpus() < 1
+                    ? null : status(cpuProcessoNaMaquina(processo)));
             resultado.add(item);
         }
         return resultado;
@@ -186,19 +188,13 @@ public class EtapaSilverParaGold {
                 .toList();
     }
 
-    private static double cpuGlobalOuFallback(List<ProcessoSilver> processos) {
+    private static Double cpuGlobal(List<ProcessoSilver> processos) {
         return processos.stream()
                 .map(ProcessoSilver::cpuGlobalPercent)
                 .filter(java.util.Objects::nonNull)
-                .map(EtapaSilverParaGold::normalizarPercentualCpu)
-                .filter(valor -> valor > 0.0)
-                .findFirst()
-                .orElseGet(() -> processos.stream()
-                        .map(ProcessoSilver::cpuPercent)
-                        .filter(java.util.Objects::nonNull)
-                        .map(EtapaSilverParaGold::normalizarPercentualCpu)
-                        .max(Double::compare)
-                        .orElse(0.0));
+                .filter(valor -> Double.isFinite(valor) && valor >= 0 && valor <= 100)
+                .map(EtapaSilverParaGold::arredondar)
+                .findFirst().orElse(null);
     }
 
     private static double cpuProcessoNaMaquina(ProcessoSilver processo) {
@@ -224,12 +220,14 @@ public class EtapaSilverParaGold {
         return valorOuZero(processo.bytesRead()) + valorOuZero(processo.bytesWritten());
     }
 
-    private static long totalBytesLidos(List<ProcessoSilver> processos) {
-        return processos.stream().mapToLong(processo -> valorOuZero(processo.bytesRead())).sum();
+    private static Long totalBytesLidos(List<ProcessoSilver> processos) {
+        var valores = processos.stream().map(ProcessoSilver::bytesRead).filter(java.util.Objects::nonNull).toList();
+        return valores.isEmpty() ? null : valores.stream().mapToLong(Long::longValue).sum();
     }
 
-    private static long totalBytesEscritos(List<ProcessoSilver> processos) {
-        return processos.stream().mapToLong(processo -> valorOuZero(processo.bytesWritten())).sum();
+    private static Long totalBytesEscritos(List<ProcessoSilver> processos) {
+        var valores = processos.stream().map(ProcessoSilver::bytesWritten).filter(java.util.Objects::nonNull).toList();
+        return valores.isEmpty() ? null : valores.stream().mapToLong(Long::longValue).sum();
     }
 
     private static double totalMemoria(List<ProcessoSilver> processos) {
@@ -252,7 +250,7 @@ public class EtapaSilverParaGold {
         periodo.add("fim", com.google.gson.JsonNull.INSTANCE);
         json.add("periodo", periodo);
         JsonObject kpis = new JsonObject();
-        kpis.addProperty("cpu_percentual", 0);
+        kpis.add("cpu_percentual", com.google.gson.JsonNull.INSTANCE);
         kpis.addProperty("processos_capturados", 0);
         kpis.add("ultima_captura", com.google.gson.JsonNull.INSTANCE);
         kpis.addProperty("memoria_total_mb", 0);

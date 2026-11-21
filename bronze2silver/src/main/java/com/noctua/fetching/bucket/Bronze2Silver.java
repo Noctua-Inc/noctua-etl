@@ -4,6 +4,7 @@ import com.noctua.conection.bucket.S3Provider;
 import io.github.cdimascio.dotenv.Dotenv;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.core.sync.ResponseTransformer;
+import software.amazon.awssdk.core.ResponseInputStream;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.*;
 
@@ -176,16 +177,27 @@ public class Bronze2Silver {
             Path historicoAnterior = Path.of("/tmp/silver", hostname + "_historico_anterior.csv");
             Path historicoAtualizado = Path.of("/tmp/silver", hostname + "_historico.csv");
 
-            Files.deleteIfExists(historicoAnterior);
-            if (!baixarHistorico(s3Client, bucketName, caminhoHistorico, historicoAnterior)
-                    && !baixarHistorico(s3Client, bucketName, prefixoSilver + hostname + "_historico.csv", historicoAnterior)) {
-                System.out.println("Primeiro histórico desta mainframe.");
+            boolean gravado = false;
+            for (int tentativa = 0; tentativa < 4 && !gravado; tentativa++) {
+                Files.deleteIfExists(historicoAnterior);
+                String etag = baixarHistorico(s3Client, bucketName, caminhoHistorico, historicoAnterior);
+                if (etag == null) baixarHistorico(s3Client, bucketName, prefixoSilver + hostname + "_historico.csv", historicoAnterior);
+                historico.atualizar(historicoAnterior, file.toPath(), historicoAtualizado);
+                if (etag != null && Files.mismatch(historicoAnterior, historicoAtualizado) == -1) {
+                    gravado = true;
+                    break;
+                }
+                var pedido = PutObjectRequest.builder().bucket(bucketName).key(caminhoHistorico);
+                if (etag == null) pedido.overrideConfiguration(c -> c.putHeader("If-None-Match", "*"));
+                else pedido.overrideConfiguration(c -> c.putHeader("If-Match", etag));
+                try {
+                    s3Client.putObject(pedido.build(), RequestBody.fromFile(historicoAtualizado));
+                    gravado = true;
+                } catch (S3Exception erro) {
+                    if (erro.statusCode() != 409 && erro.statusCode() != 412) throw erro;
+                }
             }
-
-            historico.atualizar(historicoAnterior, file.toPath(), historicoAtualizado);
-            s3Client.putObject(PutObjectRequest.builder()
-                            .bucket(bucketName).key(caminhoHistorico).build(),
-                    RequestBody.fromFile(historicoAtualizado));
+            if (!gravado) throw new IOException("O histórico mudou durante a gravação. Reexecute o lote.");
 
             PutObjectRequest putObjectRequest = PutObjectRequest.builder()
                     .bucket(bucketName)
@@ -218,17 +230,19 @@ public class Bronze2Silver {
             }
 
         } catch (IOException | S3Exception e) {
-            System.err.println("Erro ao fazer upload do arquivo para a S3: " + e.getMessage());
+            throw new IllegalStateException("Erro ao publicar o lote na Silver.", e);
+        } finally {
+            s3Client.close();
         }
     }
 
-    private boolean baixarHistorico(S3Client s3, String bucket, String chave, Path destino) throws IOException {
-        try (InputStream entrada = s3.getObject(GetObjectRequest.builder()
+    private String baixarHistorico(S3Client s3, String bucket, String chave, Path destino) throws IOException {
+        try (ResponseInputStream<GetObjectResponse> entrada = s3.getObject(GetObjectRequest.builder()
                 .bucket(bucket).key(chave).build())) {
             Files.copy(entrada, destino);
-            return true;
+            return entrada.response().eTag();
         } catch (NoSuchKeyException e) {
-            return false;
+            return null;
         }
     }
 

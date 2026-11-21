@@ -1,175 +1,128 @@
 package com.noctua.fetching.bucket;
 
-import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.Arrays;
+import java.util.LinkedHashSet;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeMap;
+import java.util.UUID;
 
 public class HistoricoCsv {
-    private final DateTimeFormatter formato = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-    private static final String CABECALHO =
-                    "Timestamp," +
-                    "HostName," +
-                    "Quantidade_Capturas," +
-                    "Porcentagem_CPU," +
-                    "Porcentagem_RAM," +
-                    "Porcentagem_Disco," +
-                    "Leitura_Disco_MiB_s," +
-                    "Escrita_Disco_MiB_s";
+    private static final DateTimeFormatter FORMATO = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final String[] METRICAS = {
+        "Porcentagem_CPU", "Porcentagem_RAM", "Porcentagem_Disco", "Leitura_Disco_MiB_s", "Escrita_Disco_MiB_s",
+        "Swap", "Freq_CPU", "Disponivel_RAM", "Disponivel_Disco", "Qtd_Requisicao_Escrita", "Qtd_Requisicao_Leitura",
+        "Dados_Enviados", "Dados_Recebidos", "Pacotes_Perdido", "Sockets_Tw"
+    };
 
     public void atualizar(Path anterior, Path lote, Path destino) throws IOException {
-        List<String> capturasNovas = lerLote(lote);
-        ArrayList<Minuto> mediasDoLote = calcularMediasPorMinuto(capturasNovas);
-
-        if (Files.exists(anterior)) {
-            List<String> linhasAnteriores = Files.readAllLines(anterior);
-            ArrayList<Minuto> mediasAnteriores = calcularMediasPorMinuto(linhasAnteriores);
-
-            for (Minuto anteriorMinuto : mediasAnteriores) {
-                Minuto minuto = buscarOuCriarMinuto(mediasDoLote, anteriorMinuto.horario, anteriorMinuto.hostname);
-                int total = minuto.quantidade + anteriorMinuto.quantidade;
-
-                minuto.cpu = (minuto.cpu * minuto.quantidade
-                        + anteriorMinuto.cpu * anteriorMinuto.quantidade) / total;
-                minuto.ram = (minuto.ram * minuto.quantidade
-                        + anteriorMinuto.ram * anteriorMinuto.quantidade) / total;
-                minuto.disco = (minuto.disco * minuto.quantidade
-                        + anteriorMinuto.disco * anteriorMinuto.quantidade) / total;
-                minuto.leituraDisco = (minuto.leituraDisco * minuto.quantidade
-                        + anteriorMinuto.leituraDisco * anteriorMinuto.quantidade) / total;
-                minuto.escritaDisco = (minuto.escritaDisco * minuto.quantidade
-                        + anteriorMinuto.escritaDisco * anteriorMinuto.quantidade) / total;
-                minuto.quantidade = total;
-            }
-        }
-
-        gravarHistorico(destino, mediasDoLote);
+        TreeMap<LocalDateTime, Minuto> minutos = new TreeMap<>();
+        if (Files.exists(anterior)) ler(anterior, minutos, null);
+        // O mesmo minuto pode receber mais de um lote; o conteúdo identifica o replay.
+        String origem = UUID.nameUUIDFromBytes(Files.readAllBytes(lote)).toString();
+        ler(lote, minutos, origem);
+        gravar(destino, minutos);
     }
 
-    private List<String> lerLote(Path lote) throws IOException {
-        return Files.readAllLines(lote);
-    }
-
-    private ArrayList<Minuto> calcularMediasPorMinuto(List<String> linhas) throws IOException {
-        ArrayList<Minuto> minutos = new ArrayList<>();
-        String cabecalho = linhas.get(0);
-        int colunaData = indice(cabecalho, "Timestamp");
-        int colunaHost = indice(cabecalho, "HostName");
-        int colunaCpu = indice(cabecalho, "Porcentagem_CPU");
-        int colunaRam = indice(cabecalho, "Porcentagem_RAM");
-        int colunaDisco = indice(cabecalho, "Porcentagem_Disco");
-        int colunaLeituraDisco = indice(cabecalho, "Leitura_Disco_MiB_s");
-        int colunaEscritaDisco = indice(cabecalho, "Escrita_Disco_MiB_s");
-        boolean arquivoResumido = CABECALHO.equals(cabecalho);
-
-        // A posição 0 é o cabeçalho. As capturas começam na posição 1.
-        for (int i = 1; i < linhas.size(); i++) {
-            String[] valores = linhas.get(i).split(",", -1);
-            LocalDateTime horario = LocalDateTime.parse(valores[colunaData], formato);
-            LocalDateTime horarioMinuto = horario.withSecond(0);
-
-            int quantidade = 1;
-            if (arquivoResumido) {
-                quantidade = Integer.parseInt(valores[2]);
-            }
-
-            Minuto minuto = buscarOuCriarMinuto(minutos, horarioMinuto, valores[colunaHost]);
-            minuto.quantidade += quantidade;
-            minuto.cpu += Double.parseDouble(valores[colunaCpu]) * quantidade;
-            minuto.ram += Double.parseDouble(valores[colunaRam]) * quantidade;
-            minuto.disco += Double.parseDouble(valores[colunaDisco]) * quantidade;
-            minuto.leituraDisco += Double.parseDouble(valores[colunaLeituraDisco]) * quantidade;
-            minuto.escritaDisco += Double.parseDouble(valores[colunaEscritaDisco]) * quantidade;
-        }
-
-        // Até aqui, CPU, RAM e disco guardam somas. A divisão transforma cada soma em média.
-        for (Minuto minuto : minutos) {
-            minuto.cpu /= minuto.quantidade;
-            minuto.ram /= minuto.quantidade;
-            minuto.disco /= minuto.quantidade;
-            minuto.leituraDisco /= minuto.quantidade;
-            minuto.escritaDisco /= minuto.quantidade;
-        }
-
-        return minutos;
-    }
-
-    private Minuto buscarOuCriarMinuto(ArrayList<Minuto> minutos, LocalDateTime horario, String hostname) {
-        int posicao = minutos.size() - 1;
-        while (posicao >= 0 && minutos.get(posicao).horario.isAfter(horario)) {
-            posicao--;
-        }
-
-        if (posicao >= 0 && minutos.get(posicao).horario.equals(horario)) {
-            return minutos.get(posicao);
-        }
-
-        Minuto minuto = new Minuto(horario, hostname);
-        minutos.add(posicao + 1, minuto);
-        return minuto;
-    }
-
-    private void gravarHistorico(Path destino, ArrayList<Minuto> minutos) throws IOException {
-        try (BufferedWriter escritor = Files.newBufferedWriter(destino)) {
-            escritor.write(CABECALHO);
-            escritor.newLine();
-
-            if (minutos.isEmpty()) {
-                return;
-            }
-
-            LocalDateTime inicio = minutos.get(minutos.size() - 1).horario.minusDays(28);
-            for (Minuto minuto : minutos) {
-                if (!minuto.horario.isBefore(inicio)) {
-                    escritor.write(minuto.horario.format(formato) + "," +
-                            minuto.hostname + "," +
-                            minuto.quantidade + "," +
-                            minuto.cpu + "," +
-                            minuto.ram + "," +
-                            minuto.disco + "," +
-                            minuto.leituraDisco + "," +
-                            minuto.escritaDisco);
-                    escritor.newLine();
+    private void ler(Path arquivo, TreeMap<LocalDateTime, Minuto> minutos, String lote) throws IOException {
+        try (var leitor = Files.newBufferedReader(arquivo)) {
+            String cabecalho = leitor.readLine();
+            if (cabecalho == null) throw new IOException("CSV sem cabeçalho: " + arquivo);
+            var colunas = Arrays.asList(cabecalho.replace("\uFEFF", "").split(",", -1));
+            int data = indice(colunas, "Timestamp");
+            int host = indice(colunas, "HostName");
+            int quantidade = colunas.indexOf("Quantidade_Capturas");
+            int origem = colunas.indexOf("Lotes");
+            int[] campos = Arrays.stream(METRICAS).mapToInt(colunas::indexOf).toArray();
+            int[] contagens = Arrays.stream(METRICAS).mapToInt(m -> colunas.indexOf("Amostras_" + m)).toArray();
+            Set<LocalDateTime> incluido = new LinkedHashSet<>();
+            String linha;
+            while ((linha = leitor.readLine()) != null) {
+                if (linha.isBlank()) continue;
+                String[] valores = linha.split(",", -1);
+                LocalDateTime horario = LocalDateTime.parse(campo(valores, data), FORMATO).withSecond(0);
+                String hostname = campo(valores, host);
+                Minuto minuto = minutos.computeIfAbsent(horario, chave -> new Minuto(hostname));
+                if (!minuto.hostname.equals(hostname)) throw new IOException("Hostnames diferentes no histórico.");
+                if (lote != null && minuto.lotes.contains(lote)) continue;
+                int capturas = quantidade < 0 ? 1 : Integer.parseInt(campo(valores, quantidade));
+                if (capturas <= 0) throw new IOException("Quantidade de capturas inválida.");
+                minuto.total += capturas;
+                for (int m = 0; m < METRICAS.length; m++) {
+                    String texto = campo(valores, campos[m]);
+                    if (texto.isBlank()) continue;
+                    double valor = Double.parseDouble(texto);
+                    if (!Double.isFinite(valor)) continue;
+                    int amostras = contagens[m] < 0 ? capturas : Integer.parseInt(campo(valores, contagens[m]));
+                    minuto.somas[m] += valor * amostras;
+                    minuto.amostras[m] += amostras;
                 }
+                String origens = campo(valores, origem);
+                if (!origens.isBlank()) minuto.lotes.addAll(Arrays.asList(origens.split("\\|")));
+                incluido.add(horario);
+            }
+            if (lote != null) for (LocalDateTime horario : incluido) minutos.get(horario).lotes.add(lote);
+        }
+    }
+
+    private void gravar(Path destino, TreeMap<LocalDateTime, Minuto> minutos) throws IOException {
+        try (BufferedWriter escritor = Files.newBufferedWriter(destino)) {
+            escritor.write("Timestamp,HostName,Quantidade_Capturas," + String.join(",", METRICAS));
+            for (String metrica : METRICAS) escritor.write(",Amostras_" + metrica);
+            escritor.write(",Lotes");
+            escritor.newLine();
+            if (minutos.isEmpty()) return;
+            LocalDateTime inicio = minutos.lastKey().minusDays(28);
+            for (Map.Entry<LocalDateTime, Minuto> registro : minutos.tailMap(inicio).entrySet()) {
+                Minuto minuto = registro.getValue();
+                escritor.write(registro.getKey().format(FORMATO) + "," + minuto.hostname + "," + minuto.total);
+                for (int m = 0; m < METRICAS.length; m++) {
+                    escritor.write(",");
+                    if (minuto.amostras[m] > 0) escritor.write(Double.toString(minuto.somas[m] / minuto.amostras[m]));
+                }
+                for (int amostras : minuto.amostras) escritor.write("," + amostras);
+                escritor.write("," + String.join("|", minuto.lotes));
+                escritor.newLine();
             }
         }
     }
 
     public String hostname(Path arquivo) throws IOException {
-        try (BufferedReader leitor = Files.newBufferedReader(arquivo)) {
+        try (var leitor = Files.newBufferedReader(arquivo)) {
             String cabecalho = leitor.readLine();
             String linha = leitor.readLine();
-            return linha.split(",", -1)[indice(cabecalho, "HostName")];
+            if (cabecalho == null || linha == null) throw new IOException("Lote sem capturas.");
+            int coluna = indice(Arrays.asList(cabecalho.replace("\uFEFF", "").split(",", -1)), "HostName");
+            String hostname = campo(linha.split(",", -1), coluna);
+            if (hostname.isBlank()) throw new IOException("Hostname ausente no lote.");
+            return hostname;
         }
     }
 
-    private int indice(String cabecalho, String nome) throws IOException {
-        String[] colunas = cabecalho.split(",", -1);
-        for (int i = 0; i < colunas.length; i++) {
-            if (colunas[i].equals(nome)) {
-                return i;
-            }
-        }
-        throw new IOException("Coluna não encontrada: " + nome);
+    private int indice(java.util.List<String> colunas, String nome) throws IOException {
+        int posicao = colunas.indexOf(nome);
+        if (posicao < 0) throw new IOException("Coluna não encontrada: " + nome);
+        return posicao;
+    }
+
+    private String campo(String[] valores, int coluna) {
+        return coluna < 0 || coluna >= valores.length ? "" : valores[coluna].trim();
     }
 
     private static class Minuto {
-        LocalDateTime horario;
-        String hostname;
-        int quantidade;
-        double cpu;
-        double ram;
-        double disco;
-        double leituraDisco;
-        double escritaDisco;
+        final String hostname;
+        final double[] somas = new double[METRICAS.length];
+        final int[] amostras = new int[METRICAS.length];
+        final Set<String> lotes = new LinkedHashSet<>();
+        int total;
 
-        Minuto(LocalDateTime horario, String hostname) {
-            this.horario = horario;
+        Minuto(String hostname) {
             this.hostname = hostname;
         }
     }

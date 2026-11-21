@@ -34,9 +34,13 @@ public class ConsultasPrevisoes {
 
     public List<Limite> buscarLimites(int idMainframe) {
         return jdbc.query("""
-                SELECT c.tipo, p.pico_min, p.pico_max
+                SELECT c.tipo,
+                       CASE c.tipo WHEN 'CPU' THEN p.cpu_pct_min WHEN 'RAM' THEN p.ram_pct_min
+                                   WHEN 'DISCO' THEN p.disco_pct_min END AS pico_min,
+                       CASE c.tipo WHEN 'CPU' THEN p.cpu_pct_max WHEN 'RAM' THEN p.ram_pct_max
+                                   WHEN 'DISCO' THEN p.disco_pct_max END AS pico_max
                 FROM parametro p JOIN componente c ON c.id_componente = p.id_componente
-                WHERE p.id_mainframe = ? ORDER BY c.tipo
+                WHERE p.id_mainframe = ? AND c.tipo IN ('CPU', 'RAM', 'DISCO') ORDER BY c.tipo
                 """, new BeanPropertyRowMapper<>(Limite.class), idMainframe);
     }
 

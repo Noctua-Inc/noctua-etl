@@ -4,6 +4,7 @@ import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
 import com.amazonaws.services.lambda.runtime.events.S3Event;
 import com.noctua.dashboard.previsoes.Previsoes;
+import com.noctua.fetching.bucket.Monitoramento;
 import com.noctua.fetching.bucket.Silver2GoldProcessos;
 
 import java.nio.file.Path;
@@ -25,15 +26,16 @@ public class EntradaLambda implements RequestHandler<S3Event, String> {
                     && caminho.endsWith("_historico.csv")) {
 
                 try {
+                    new Monitoramento().executar(caminho);
                     Previsoes previsoes = new Previsoes();
                     previsoes.executar(caminho);
 
                     contexto.getLogger().log(
-                            "Previsões geradas: " + caminho + "\n"
+                            "Monitoramento e previsões publicados: " + caminho + "\n"
                     );
                 } catch (Exception erro) {
                     throw new RuntimeException(
-                            "Erro ao gerar as previsões.", erro
+                            "Erro ao gerar o Gold a partir do histórico.", erro
                     );
                 }
             }
