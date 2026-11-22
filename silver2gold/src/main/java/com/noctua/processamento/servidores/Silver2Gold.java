@@ -264,18 +264,36 @@ public class Silver2Gold {
     }
 
     public void uploadFile(String file) {
+        if (file == null || file.isBlank()) {
+            System.err.println("Nenhum arquivo fornecido para upload.");
+            return;
+        }
+
         Dotenv dotenv = Dotenv.load();
         S3Client s3Client = new S3Provider().getS3Client();
         String bucketName = dotenv.get("BUCKET_NAME");
 
         File pastaGold = new File("gold");
-        String nomeEmpresa = file.substring(0, file.indexOf("/02-silver/"));
+        int indiceSilver = file.indexOf("/02-silver/");
+        String nomeEmpresa = indiceSilver != -1 ? file.substring(0, indiceSilver) : "";
+
+        String nomeComExtensao = file.substring(file.lastIndexOf('/') + 1);
+        String nomeSemExtensao = nomeComExtensao.contains(".")
+                ? nomeComExtensao.substring(0, nomeComExtensao.lastIndexOf('.'))
+                : nomeComExtensao;
+
+        int indiceUnderline = nomeSemExtensao.indexOf('_');
+        String nomeArquivo = indiceUnderline != -1
+                ? nomeSemExtensao.substring(0, indiceUnderline)
+                : nomeSemExtensao;
+
+        String prefixoEmpresa = nomeEmpresa.isEmpty() ? "" : nomeEmpresa + "/";
         File[] arquivos = pastaGold.listFiles();
 
         if (arquivos != null) {
             for (File arquivo : arquivos) {
                 if (arquivo.isFile() && arquivo.getName().toLowerCase().endsWith(".json")) {
-                    String pathS3 = nomeEmpresa + "/03-gold/gustavo/monitoramentoComponentes/" + arquivo.getName();
+                    String pathS3 = prefixoEmpresa + "03-gold/" + nomeArquivo + "/monitoramentoComponentes/" + arquivo.getName();
 
                     try {
                         PutObjectRequest putObjectRequest = PutObjectRequest.builder()
