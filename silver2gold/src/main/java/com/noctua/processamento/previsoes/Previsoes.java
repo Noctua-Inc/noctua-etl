@@ -1,17 +1,17 @@
-package com.noctua.dashboard.previsoes;
+package com.noctua.processamento.previsoes;
 
 
 import com.google.gson.JsonObject;
-import com.noctua.conection.bucket.S3Provider;
-import com.noctua.conection.jdbc.DBConnectionProvider;
-import com.noctua.model.ConsultasPrevisoes;
-import com.noctua.model.Mainframe;
+import com.noctua.infraestrutura.s3.S3Provider;
+import com.noctua.infraestrutura.banco.DBConnectionProvider;
+import com.noctua.infraestrutura.banco.ConsultasPrevisoes;
+import com.noctua.infraestrutura.banco.Mainframe;
+import com.noctua.processamento.historico.LeitorCsv;
+import com.noctua.processamento.historico.LeitorCsv.Historico;
 import io.github.cdimascio.dotenv.Dotenv;
 import org.springframework.jdbc.core.JdbcTemplate;
 import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 
-import java.io.InputStream;
 import java.time.*;
 import java.util.*;
 
@@ -33,35 +33,33 @@ public class Previsoes {
     }
 
     public void executar(String chave) throws Exception {
-        if (!chave.endsWith("_historico.csv") || !chave.contains("/02-silver/")) return;
+        if (!LeitorCsv.ehHistorico(chave)) return;
+        LeitorCsv leitor = new LeitorCsv();
         if (clienteTeste != null) {
-            executar(chave, clienteTeste, bancoTeste, bucketTeste);
+            executar(clienteTeste, bancoTeste, bucketTeste, leitor.ler(clienteTeste, bucketTeste, chave));
             return;
         }
         DBConnectionProvider conexao = new DBConnectionProvider();
         try (S3Client s3 = new S3Provider().getS3Client()) {
-            executar(chave, s3, conexao.getJdbcTemplate(), Dotenv.configure().ignoreIfMissing().load().get("BUCKET_NAME"));
+            String bucket = Dotenv.configure().ignoreIfMissing().load().get("BUCKET_NAME");
+            executar(s3, conexao.getJdbcTemplate(), bucket, leitor.ler(s3, bucket, chave));
         } finally {
             conexao.fechar();
         }
     }
 
-    private void executar(String chave, S3Client s3, JdbcTemplate jdbc, String bucket) throws Exception {
+    public void executar(S3Client s3, JdbcTemplate jdbc, String bucket, Historico historico) throws Exception {
 
         ConsultasPrevisoes consultas = new ConsultasPrevisoes(jdbc);
 
-        String[] partes = chave.split("/");
-        String empresa = partes[0];
-        String nome = partes[partes.length - 1];
-        String hostname = nome.substring(0, nome.length() - "_historico.csv".length());
+        String empresa = historico.empresa();
+        String hostname = historico.hostname();
 
         int idEmpresa = consultas.buscarIdEmpresa(empresa);
         Mainframe mainframe = consultas.buscarMainframe(hostname, idEmpresa);
 
         CalculosPrevisoes calculos = new CalculosPrevisoes();
-        try (InputStream entrada = s3.getObject(GetObjectRequest.builder().bucket(bucket).key(chave).build())) {
-            calculos.lerHistorico(entrada, mainframe.getHostname());
-        }
+        calculos.carregarHistorico(historico.capturas());
         LocalDateTime gerado = LocalDateTime.ofInstant(relogio.instant(), CalculosPrevisoes.FUSO);
         String base = empresa + "/03-gold/" + mainframe.getHostname() + "/";
         JsonPrevisoes json = new JsonPrevisoes(s3, bucket);

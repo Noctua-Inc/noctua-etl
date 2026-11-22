@@ -1,7 +1,7 @@
 package com.noctua;
 
-import com.noctua.fetching.bucket.Silver2Gold;
-import com.noctua.fetching.bucket.Silver2GoldProcessos;
+import com.noctua.processamento.servidores.Silver2Gold;
+import com.noctua.processamento.processos.Silver2GoldProcessos;
 
 public class Main {
     public static void main(String[] args) throws Exception {

@@ -1,6 +1,7 @@
-package com.noctua.fetching.bucket;
+package com.noctua.processamento.servidores;
 
-import com.noctua.conection.bucket.S3Provider;
+import com.noctua.infraestrutura.s3.S3Provider;
+import com.noctua.processamento.historico.LeitorCsv;
 import io.github.cdimascio.dotenv.Dotenv;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.core.sync.ResponseTransformer;
@@ -96,42 +97,47 @@ public class Silver2Gold {
         String arquivoJsonRedeRegistros = apenasArquivo.replace(".csv", "_rede_registros.json");
         String arquivoJsonDiscoRegistros = apenasArquivo.replace(".csv", "_disco_registros.json");
 
-        creatingFullJson(arquivoJsonTotalRegistros, apenasArquivo, diretorioGold);
-        creatingCpuJson(arquivoJsonCpuRegistros, apenasArquivo, diretorioGold);
-        creatingRamJson(arquivoJsonRamRegistros, apenasArquivo, diretorioGold);
-        creatingNetworkJson(arquivoJsonRedeRegistros, apenasArquivo, diretorioGold);
-        creatingDiskJson(arquivoJsonDiscoRegistros, apenasArquivo, diretorioGold);
+        List<String[]> linhas;
+        try {
+            linhas = new LeitorCsv().lerLinhas(Path.of("silver", apenasArquivo));
+        } catch (IOException erro) {
+            System.err.println("Ocorreu um erro de I/O ao ler o arquivo: " + erro.getMessage());
+            return;
+        }
+
+        creatingFullJson(arquivoJsonTotalRegistros, linhas, diretorioGold);
+        creatingCpuJson(arquivoJsonCpuRegistros, linhas, diretorioGold);
+        creatingRamJson(arquivoJsonRamRegistros, linhas, diretorioGold);
+        creatingNetworkJson(arquivoJsonRedeRegistros, linhas, diretorioGold);
+        creatingDiskJson(arquivoJsonDiscoRegistros, linhas, diretorioGold);
     }
 
-    private void creatingFullJson(String exampleFile, String file, File directory) {
+    private void creatingFullJson(String exampleFile, List<String[]> linhas, File directory) {
         File arquivoGold = new File(directory, exampleFile);
 
-        try (
-                BufferedReader reader = new BufferedReader(new FileReader(new File(new File("silver"), file)));
-                BufferedWriter writer = new BufferedWriter(new FileWriter(arquivoGold))
-        ) {
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(arquivoGold))) {
 
-            Double mediaDadosEnviados = calculateAverage(file, 13);
-            Double mediaDadosRecebidos = calculateAverage(file, 14);
+            Double mediaDadosEnviados = calculateAverage(linhas, 13);
+            Double mediaDadosRecebidos = calculateAverage(linhas, 14);
             Double somaRede = mediaDadosEnviados + mediaDadosRecebidos;
 
             writer.write("{");
             writer.newLine();
-            writer.write("  \"hora_de_captura\": \"" + extractCaptureTime(file) + "\",");
+            writer.write("  \"hora_de_captura\": \"" + extractCaptureTime(linhas) + "\",");
             writer.newLine();
-            writer.write("  \"porcentagem_cpu\": " + String.format(Locale.US, "%.2f", calculateAverage(file, 2)) + ",");
+            writer.write("  \"porcentagem_cpu\": " + String.format(Locale.US, "%.2f", calculateAverage(linhas, 2)) + ",");
             writer.newLine();
-            writer.write("  \"porcentagem_ram\": " + String.format(Locale.US, "%.2f", calculateAverage(file, 4)) + ",");
+            writer.write("  \"porcentagem_ram\": " + String.format(Locale.US, "%.2f", calculateAverage(linhas, 4)) + ",");
             writer.newLine();
-            writer.write("  \"porcentagem_disco\": " + String.format(Locale.US, "%.2f", calculateAverage(file, 7)) + ",");
+            writer.write("  \"porcentagem_disco\": " + String.format(Locale.US, "%.2f", calculateAverage(linhas, 7)) + ",");
             writer.newLine();
-            writer.write("  \"media_swap_porcentagem\": " + String.format(Locale.US, "%.2f", calculateAverage(file, 11)) + ",");
+            writer.write("  \"media_swap_porcentagem\": " + String.format(Locale.US, "%.2f", calculateAverage(linhas, 11)) + ",");
             writer.newLine();
             writer.write("  \"media_trafego_rede\": " + String.format(Locale.US, "%.2f", somaRede) + ",");
             writer.newLine();
-            writer.write("  \"dados_enviados_medio\": " + String.format(Locale.US, "%.2f", calculateAverage(file, 13)) + ",");
+            writer.write("  \"dados_enviados_medio\": " + String.format(Locale.US, "%.2f", calculateAverage(linhas, 13)) + ",");
             writer.newLine();
-            writer.write("  \"dados_recebidos_medio\": " + String.format(Locale.US, "%.2f", calculateAverage(file, 14)));
+            writer.write("  \"dados_recebidos_medio\": " + String.format(Locale.US, "%.2f", calculateAverage(linhas, 14)));
             writer.newLine();
             writer.write("}");
 
@@ -141,20 +147,17 @@ public class Silver2Gold {
         }
     }
 
-    private void creatingCpuJson(String exampleFile, String file, File directory) {
+    private void creatingCpuJson(String exampleFile, List<String[]> linhas, File directory) {
         File arquivoGold = new File(directory, exampleFile);
 
-        try (
-                BufferedReader reader = new BufferedReader(new FileReader(new File(new File("silver"), file)));
-                BufferedWriter writer = new BufferedWriter(new FileWriter(arquivoGold))
-        ) {
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(arquivoGold))) {
             writer.write("{");
             writer.newLine();
-            writer.write("  \"hora_de_captura\": \"" + extractCaptureTime(file) + "\",");
+            writer.write("  \"hora_de_captura\": \"" + extractCaptureTime(linhas) + "\",");
             writer.newLine();
-            writer.write("  \"media_cpu_porcentagem\": " + String.format(Locale.US, "%.2f", calculateAverage(file, 2)) + ",");
+            writer.write("  \"media_cpu_porcentagem\": " + String.format(Locale.US, "%.2f", calculateAverage(linhas, 2)) + ",");
             writer.newLine();
-            writer.write("  \"media_cpu_frequencia\": " + String.format(Locale.US, "%.2f", calculateAverage(file, 3)));
+            writer.write("  \"media_cpu_frequencia\": " + String.format(Locale.US, "%.2f", calculateAverage(linhas, 3)));
             writer.newLine();
             writer.write("}");
 
@@ -164,22 +167,19 @@ public class Silver2Gold {
         }
     }
 
-    private void creatingRamJson(String exampleFile, String file, File directory) {
+    private void creatingRamJson(String exampleFile, List<String[]> linhas, File directory) {
         File arquivoGold = new File(directory, exampleFile);
 
-        try (
-                BufferedReader reader = new BufferedReader(new FileReader(new File(new File("silver"), file)));
-                BufferedWriter writer = new BufferedWriter(new FileWriter(arquivoGold))
-        ) {
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(arquivoGold))) {
             writer.write("{");
             writer.newLine();
-            writer.write("  \"hora_de_captura\": \"" + extractCaptureTime(file) + "\",");
+            writer.write("  \"hora_de_captura\": \"" + extractCaptureTime(linhas) + "\",");
             writer.newLine();
-            writer.write("  \"media_ram_porcentagem\": " + String.format(Locale.US, "%.2f", calculateAverage(file, 4)) + ",");
+            writer.write("  \"media_ram_porcentagem\": " + String.format(Locale.US, "%.2f", calculateAverage(linhas, 4)) + ",");
             writer.newLine();
-            writer.write("  \"media_swap_porcentagem\": " + String.format(Locale.US, "%.2f", calculateAverage(file, 11)) + ",");
+            writer.write("  \"media_swap_porcentagem\": " + String.format(Locale.US, "%.2f", calculateAverage(linhas, 11)) + ",");
             writer.newLine();
-            writer.write("  \"media_ram_disponivel\": " + String.format(Locale.US, "%.2f", calculateAverage(file, 6)));
+            writer.write("  \"media_ram_disponivel\": " + String.format(Locale.US, "%.2f", calculateAverage(linhas, 6)));
             writer.newLine();
             writer.write("}");
 
@@ -189,24 +189,21 @@ public class Silver2Gold {
         }
     }
 
-    private void creatingNetworkJson(String exampleFile, String file, File directory) {
+    private void creatingNetworkJson(String exampleFile, List<String[]> linhas, File directory) {
         File arquivoGold = new File(directory, exampleFile);
 
-        try (
-                BufferedReader reader = new BufferedReader(new FileReader(new File(new File("silver"), file)));
-                BufferedWriter writer = new BufferedWriter(new FileWriter(arquivoGold))
-        ) {
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(arquivoGold))) {
             writer.write("{");
             writer.newLine();
-            writer.write("  \"hora_de_captura\": \"" + extractCaptureTime(file) + "\",");
+            writer.write("  \"hora_de_captura\": \"" + extractCaptureTime(linhas) + "\",");
             writer.newLine();
-            writer.write("  \"media_dados_enviados\": " + String.format(Locale.US, "%.2f", calculateAverage(file, 13)) + ",");
+            writer.write("  \"media_dados_enviados\": " + String.format(Locale.US, "%.2f", calculateAverage(linhas, 13)) + ",");
             writer.newLine();
-            writer.write("  \"media_dados_recebidos\": " + String.format(Locale.US, "%.2f", calculateAverage(file, 14)) + ",");
+            writer.write("  \"media_dados_recebidos\": " + String.format(Locale.US, "%.2f", calculateAverage(linhas, 14)) + ",");
             writer.newLine();
-            writer.write("  \"media_dados_perdidos\": " + String.format(Locale.US, "%.2f", calculateAverage(file, 15)) + ",");
+            writer.write("  \"media_dados_perdidos\": " + String.format(Locale.US, "%.2f", calculateAverage(linhas, 15)) + ",");
             writer.newLine();
-            writer.write("  \"media_sockets_tw\": " + String.format(Locale.US, "%.0f", calculateAverage(file, 16)));
+            writer.write("  \"media_sockets_tw\": " + String.format(Locale.US, "%.0f", calculateAverage(linhas, 16)));
             writer.newLine();
             writer.write("}");
 
@@ -216,23 +213,20 @@ public class Silver2Gold {
         }
     }
 
-    private void creatingDiskJson(String exampleFile, String file, File directory) {
+    private void creatingDiskJson(String exampleFile, List<String[]> linhas, File directory) {
         File arquivoGold = new File(directory, exampleFile);
 
-        Long mediaEscrita = Math.round(calculateAverage(file, 9));
-        Long mediaLeitura = Math.round(calculateAverage(file, 10));
+        Long mediaEscrita = Math.round(calculateAverage(linhas, 9));
+        Long mediaLeitura = Math.round(calculateAverage(linhas, 10));
 
-        try (
-                BufferedReader reader = new BufferedReader(new FileReader(new File(new File("silver"), file)));
-                BufferedWriter writer = new BufferedWriter(new FileWriter(arquivoGold))
-        ) {
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(arquivoGold))) {
             writer.write("{");
             writer.newLine();
-            writer.write("  \"hora_de_captura\": \"" + extractCaptureTime(file) + "\",");
+            writer.write("  \"hora_de_captura\": \"" + extractCaptureTime(linhas) + "\",");
             writer.newLine();
-            writer.write("  \"media_disco_porcentagem\": " + String.format(Locale.US, "%.2f", calculateAverage(file, 7)) + ",");
+            writer.write("  \"media_disco_porcentagem\": " + String.format(Locale.US, "%.2f", calculateAverage(linhas, 7)) + ",");
             writer.newLine();
-            writer.write("  \"media_disco_disponivel\": " + String.format(Locale.US, "%.2f", calculateAverage(file, 8)) + ",");
+            writer.write("  \"media_disco_disponivel\": " + String.format(Locale.US, "%.2f", calculateAverage(linhas, 8)) + ",");
             writer.newLine();
             writer.write("  \"media_qtd_requisicao_escrita\": \"" + String.format(new Locale("pt", "BR"), "%,d", mediaEscrita) + "\",");
             writer.newLine();
@@ -246,62 +240,27 @@ public class Silver2Gold {
         }
     }
 
-    private Double calculateAverage(String file, Integer columnIndex) {
+    private Double calculateAverage(List<String[]> linhas, Integer columnIndex) {
         Double soma = 0.0;
         Integer contador = 0;
-
-        try (BufferedReader reader = new BufferedReader(new FileReader(new File(new File("silver"), file)))) {
-            String linha;
-            Integer linhaAtual = 0;
-
-            while ((linha = reader.readLine()) != null) {
-                if (linhaAtual > 0) {
-                    String[] colunas = linha.split(",");
-                    if (columnIndex < colunas.length) {
-                        try {
-                            Double valor = Double.parseDouble(colunas[columnIndex]);
-                            soma += valor;
-                            contador++;
-                        } catch (NumberFormatException ignored) {}
-                    }
-                }
-                linhaAtual++;
+        for (int i = 1; i < linhas.size(); i++) {
+            String[] colunas = linhas.get(i);
+            if (columnIndex < colunas.length) {
+                try {
+                    Double valor = Double.parseDouble(colunas[columnIndex]);
+                    soma += valor;
+                    contador++;
+                } catch (NumberFormatException ignored) {}
             }
-        } catch (IOException e) {
-            System.err.println("Erro ao ler o arquivo para o cálculo da média: " + e.getMessage());
         }
-
-        return contador > 0 ? (soma / contador) : 0.0;
+        return contador > 0 ? soma / contador : 0.0;
     }
 
-    private String extractCaptureTime(String file) {
-        String horaCaptura = "Nenhum registro encontrado";
-
-        try (BufferedReader reader = new BufferedReader(new FileReader(new File(new File("silver"), file)))) {
-            String linha;
-            Integer linhaAtual = 0;
-
-            while ((linha = reader.readLine()) != null) {
-                if (linhaAtual == 1) { // Pega o primeiro registro após o cabeçalho
-                    String[] colunas = linha.split(",");
-                    if (colunas.length > 17) {
-                        String horario = colunas[17].trim();
-                        String h = horario.contains(" ") ? horario.substring(horario.indexOf(" ") + 1).trim() : horario;
-                        if (h.length() >= 5) {
-                            horaCaptura = h.substring(0, 5); // Apenas HH:mm
-                        } else {
-                            horaCaptura = h;
-                        }
-                    }
-                    break;
-                }
-                linhaAtual++;
-            }
-        } catch (IOException e) {
-            System.err.println("Erro ao ler o arquivo para extrair a hora de captura: " + e.getMessage());
-        }
-
-        return horaCaptura;
+    private String extractCaptureTime(List<String[]> linhas) {
+        if (linhas.size() <= 1 || linhas.get(1).length <= 17) return "Nenhum registro encontrado";
+        String horario = linhas.get(1)[17].trim();
+        String h = horario.contains(" ") ? horario.substring(horario.indexOf(" ") + 1).trim() : horario;
+        return h.length() >= 5 ? h.substring(0, 5) : h;
     }
 
     public void uploadFile(String file) {

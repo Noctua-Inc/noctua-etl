@@ -1,4 +1,4 @@
-package com.noctua.model;
+package com.noctua.infraestrutura.banco;
 
 import org.springframework.jdbc.core.BeanPropertyRowMapper;
 import org.springframework.jdbc.core.JdbcTemplate;

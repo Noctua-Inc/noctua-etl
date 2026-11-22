@@ -1,4 +1,4 @@
-package com.noctua.conection.jdbc;
+package com.noctua.infraestrutura.banco;
 
 import io.github.cdimascio.dotenv.Dotenv;
 import org.apache.commons.dbcp2.BasicDataSource;

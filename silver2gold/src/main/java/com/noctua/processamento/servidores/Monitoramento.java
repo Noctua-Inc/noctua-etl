@@ -1,16 +1,13 @@
-package com.noctua.fetching.bucket;
+package com.noctua.processamento.servidores;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
-import com.noctua.conection.bucket.S3Provider;
-import com.noctua.dashboard.previsoes.CalculosPrevisoes;
-import com.noctua.dashboard.previsoes.LeitorCsv;
-import io.github.cdimascio.dotenv.Dotenv;
+import com.noctua.processamento.previsoes.CalculosPrevisoes;
+import com.noctua.processamento.historico.LeitorCsv.Historico;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
@@ -31,21 +28,13 @@ public class Monitoramento {
         "erros_recebimento", "sockets_time_wait"
     };
 
-    public void executar(String chave) throws IOException {
-        String[] partes = chave.split("/");
-        if (partes.length != 4 || !partes[3].equals(partes[2] + "_historico.csv")) return;
-        String hostname = partes[2];
-        String bucket = Dotenv.configure().ignoreIfMissing().load().get("BUCKET_NAME");
-        String pasta = partes[0] + "/03-gold/" + hostname + "/monitoramento/";
-        try (S3Client s3 = new S3Provider().getS3Client();
-             var entrada = s3.getObject(GetObjectRequest.builder().bucket(bucket).key(chave).build())) {
-            String versao = entrada.response().eTag();
-            List<String[]> capturas = new LeitorCsv().ler(entrada, hostname);
-            if (capturas.isEmpty()) return;
-            Documentos documentos = gerar(hostname, capturas);
-            publicar(s3, bucket, chave, versao, pasta + "historico.json", documentos.historico());
-            publicar(s3, bucket, chave, versao, pasta + "atual.json", documentos.atual());
-        }
+    public void executar(S3Client s3, String bucket, Historico historico) throws IOException {
+        if (historico.capturas().isEmpty()) return;
+        String hostname = historico.hostname();
+        String pasta = historico.empresa() + "/03-gold/" + hostname + "/monitoramento/";
+        Documentos documentos = gerar(hostname, historico.capturas());
+        publicar(s3, bucket, historico.chave(), historico.etag(), pasta + "historico.json", documentos.historico());
+        publicar(s3, bucket, historico.chave(), historico.etag(), pasta + "atual.json", documentos.atual());
     }
 
     static Documentos gerar(String hostname, List<String[]> capturas) {

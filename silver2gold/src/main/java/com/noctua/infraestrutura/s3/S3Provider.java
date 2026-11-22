@@ -1,4 +1,4 @@
-package com.noctua.conection.bucket;
+package com.noctua.infraestrutura.s3;
 
 import io.github.cdimascio.dotenv.Dotenv;
 import io.github.cdimascio.dotenv.DotenvEntry;

@@ -1,8 +1,8 @@
-package com.noctua.fetching.bucket;
+package com.noctua.processamento.processos;
 
 import com.google.gson.JsonParser;
-import com.noctua.conection.bucket.S3Provider;
-import com.noctua.model.ProcessoSilver;
+import com.noctua.infraestrutura.s3.S3Provider;
+import com.noctua.processamento.historico.LeitorCsv;
 import io.github.cdimascio.dotenv.Dotenv;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.core.sync.ResponseTransformer;
@@ -14,15 +14,18 @@ import java.io.BufferedWriter;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 
 public class Silver2GoldProcessos {
+    private static final String LOTE_ORIGEM = "lote-silver";
+    private static final String MARCADOR_PROCESSOS = "_processos_";
     private final Path diretorioSilver;
     private final Path diretorioGold;
 
@@ -33,6 +36,76 @@ public class Silver2GoldProcessos {
     public Silver2GoldProcessos(Path diretorioBase) {
         diretorioSilver = diretorioBase.resolve("silver");
         diretorioGold = diretorioBase.resolve("gold");
+    }
+
+    public static boolean ehLoteSilver(String chave) {
+        String[] partes = chave.split("/", -1);
+        if (partes.length != 4 || partes[0].isBlank() || !partes[1].equals("02-silver") || partes[2].isBlank()) return false;
+        String prefixo = partes[2] + MARCADOR_PROCESSOS;
+        return partes[3].regionMatches(true, 0, prefixo, 0, prefixo.length()) && partes[3].endsWith("_silver.csv");
+    }
+
+    public boolean executar(S3Client s3, String bucket, String chave) throws IOException {
+        if (!ehLoteSilver(chave)) throw new IllegalArgumentException("Chave Silver de processos inválida: " + chave);
+        return publicar(s3, bucket, chave, false);
+    }
+
+    public boolean recuperarSeAusente(S3Client s3, String bucket, String caminhoMetricas) throws IOException {
+        String hostname = extrairHostname(caminhoMetricas);
+        if (metadados(s3, bucket, caminhoGold(caminhoMetricas, hostname)) != null) return false;
+        String prefixo = caminhoMetricas.substring(0, caminhoMetricas.lastIndexOf('/') + 1);
+        var pedido = ListObjectsV2Request.builder().bucket(bucket).prefix(prefixo).build();
+        String lote = null;
+        for (S3Object objeto : s3.listObjectsV2Paginator(pedido).contents()) {
+            if (ehLoteSilver(objeto.key()) && (lote == null || nomeLote(objeto.key()).compareTo(nomeLote(lote)) > 0)) {
+                lote = objeto.key();
+            }
+        }
+        if (lote == null) return false;
+        return publicar(s3, bucket, lote, true);
+    }
+
+    private boolean publicar(S3Client s3, String bucket, String chave, boolean somenteAusente) throws IOException {
+        var pedido = GetObjectRequest.builder().bucket(bucket).key(chave).build();
+        String destino = caminhoGold(chave, extrairHostname(chave));
+        String nomeLote = nomeLote(chave);
+        String json;
+        try (var entrada = s3.getObject(pedido);
+             var leitor = new BufferedReader(new InputStreamReader(entrada, StandardCharsets.UTF_8))) {
+            json = gerarJson(leitor);
+        }
+        for (int tentativa = 0; tentativa < 4; tentativa++) {
+            var anterior = metadados(s3, bucket, destino);
+            if (anterior != null) {
+                String loteAnterior = anterior.metadata().get(LOTE_ORIGEM);
+                if (somenteAusente || (loteAnterior != null && loteAnterior.compareTo(nomeLote) > 0)) return false;
+            }
+            var escrita = PutObjectRequest.builder().bucket(bucket).key(destino)
+                    .contentType("application/json; charset=utf-8").metadata(Map.of(LOTE_ORIGEM, nomeLote));
+            if (anterior == null) escrita.overrideConfiguration(c -> c.putHeader("If-None-Match", "*"));
+            else escrita.overrideConfiguration(c -> c.putHeader("If-Match", anterior.eTag()));
+            try {
+                s3.putObject(escrita.build(), RequestBody.fromString(json));
+                return true;
+            } catch (S3Exception erro) {
+                if (erro.statusCode() != 409 && erro.statusCode() != 412) throw erro;
+            }
+        }
+        throw new IOException("Conflito ao publicar " + destino);
+    }
+
+    private static String nomeLote(String chave) {
+        String[] partes = chave.split("/", -1);
+        return partes[3].substring(partes[2].length() + MARCADOR_PROCESSOS.length());
+    }
+
+    private HeadObjectResponse metadados(S3Client s3, String bucket, String chave) {
+        try {
+            return s3.headObject(HeadObjectRequest.builder().bucket(bucket).key(chave).build());
+        } catch (S3Exception erro) {
+            if (erro.statusCode() == 404) return null;
+            throw erro;
+        }
     }
 
     public String searchingFileCsv() {
@@ -116,22 +189,13 @@ public class Silver2GoldProcessos {
             return;
         }
 
-        List<ProcessoSilver> processos = new ArrayList<>();
+        String json;
         try (BufferedReader reader = Files.newBufferedReader(origem, StandardCharsets.UTF_8)) {
-            reader.readLine(); // Pula o cabeçalho da Silver.
-
-            String linha;
-            while ((linha = reader.readLine()) != null) {
-                ProcessoSilver.fromSilverLine(linha).ifPresent(processos::add);
-            }
+            json = gerarJson(reader);
         } catch (IOException e) {
             System.err.println("Erro ao ler o CSV da Silver: " + e.getMessage());
             return;
         }
-
-        // Valida o JSON antes de gravar para não publicar um documento inválido.
-        String json = EtapaSilverParaGold.gerarJsonGold(processos);
-        JsonParser.parseString(json).getAsJsonObject();
 
         try (BufferedWriter writer = Files.newBufferedWriter(destino, StandardCharsets.UTF_8)) {
             writer.write(json);
@@ -139,6 +203,13 @@ public class Silver2GoldProcessos {
         } catch (IOException e) {
             System.err.println("Ocorreu um erro de I/O ao processar os arquivos: " + e.getMessage());
         }
+    }
+
+    private String gerarJson(BufferedReader leitor) throws IOException {
+        List<ProcessoSilver> processos = new LeitorCsv().lerProcessos(leitor);
+        String json = EtapaSilverParaGold.gerarJsonGold(processos);
+        JsonParser.parseString(json).getAsJsonObject();
+        return json;
     }
 
     public void uploadFile(String file) {

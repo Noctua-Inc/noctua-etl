@@ -1,4 +1,4 @@
-package com.noctua.dashboard.previsoes;
+package com.noctua.processamento.previsoes;
 
 import com.google.gson.JsonObject;
 

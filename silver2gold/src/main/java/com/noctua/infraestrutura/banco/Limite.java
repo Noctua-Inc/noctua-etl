@@ -1,4 +1,4 @@
-package com.noctua.model;
+package com.noctua.infraestrutura.banco;
 
 public class Limite {
     private String tipo;

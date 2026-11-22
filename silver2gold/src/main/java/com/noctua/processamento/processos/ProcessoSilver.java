@@ -1,4 +1,4 @@
-package com.noctua.model;
+package com.noctua.processamento.processos;
 
 import java.util.Optional;
 

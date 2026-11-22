@@ -1,8 +1,8 @@
-package com.noctua.dashboard.previsoes;
+package com.noctua.processamento.previsoes;
 
 
 import com.google.gson.*;
-import com.noctua.model.Mainframe;
+import com.noctua.infraestrutura.banco.Mainframe;
 import software.amazon.awssdk.core.ResponseInputStream;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;

@@ -1,10 +1,9 @@
-package com.noctua.fetching.bucket;
+package com.noctua.processamento.processos;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
-import com.noctua.model.ProcessoSilver;
 
 import java.util.ArrayList;
 import java.util.Comparator;

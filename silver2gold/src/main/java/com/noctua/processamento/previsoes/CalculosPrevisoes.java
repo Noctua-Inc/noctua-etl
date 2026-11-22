@@ -1,6 +1,7 @@
-package com.noctua.dashboard.previsoes;
+package com.noctua.processamento.previsoes;
 
 import com.google.gson.*;
+import com.noctua.processamento.historico.LeitorCsv;
 import java.io.IOException;
 import java.io.InputStream;
 import java.time.format.DateTimeFormatter;
@@ -28,7 +29,7 @@ public class CalculosPrevisoes {
         carregarHistorico(leitor.ler(entrada, hostname));
     }
 
-    private void carregarHistorico(ArrayList<String[]> historico) {
+    void carregarHistorico(List<String[]> historico) {
         if (historico.isEmpty()) throw new IllegalArgumentException("Histórico sem capturas.");
         String[] ultimaLinha = historico.get(historico.size() - 1);
         atual = LocalDateTime.parse(ultimaLinha[0], formato);

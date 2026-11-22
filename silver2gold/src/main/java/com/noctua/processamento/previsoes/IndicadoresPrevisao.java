@@ -1,7 +1,7 @@
-package com.noctua.dashboard.previsoes;
+package com.noctua.processamento.previsoes;
 
 import com.google.gson.*;
-import com.noctua.model.Limite;
+import com.noctua.infraestrutura.banco.Limite;
 
 import java.text.NumberFormat;
 import java.time.Duration;
@@ -10,9 +10,9 @@ import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 
-import static com.noctua.dashboard.previsoes.CalculosPrevisoes.data;
-import static com.noctua.dashboard.previsoes.CalculosPrevisoes.horario;
-import static com.noctua.dashboard.previsoes.CalculosPrevisoes.numero;
+import static com.noctua.processamento.previsoes.CalculosPrevisoes.data;
+import static com.noctua.processamento.previsoes.CalculosPrevisoes.horario;
+import static com.noctua.processamento.previsoes.CalculosPrevisoes.numero;
 
 final class IndicadoresPrevisao {
     private static final DateTimeFormatter HORA = DateTimeFormatter.ofPattern("HH:mm");
