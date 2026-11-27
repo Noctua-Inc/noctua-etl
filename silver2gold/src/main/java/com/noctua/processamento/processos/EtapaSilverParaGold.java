@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.TreeMap;
+import java.util.function.ToDoubleFunction;
 
 public class EtapaSilverParaGold {
 
@@ -122,31 +123,111 @@ public class EtapaSilverParaGold {
     private static JsonObject criarGraficos(TreeMap<String, List<ProcessoSilver>> agrupados,
                                             JsonArray labels) {
         JsonArray cpu = new JsonArray();
+        JsonArray cpuMaiorAgressor = new JsonArray();
         JsonArray memoria = new JsonArray();
+        JsonArray memoriaMaiorAgressor = new JsonArray();
         JsonArray lidos = new JsonArray();
+        JsonArray maiorLeitura = new JsonArray();
         JsonArray escritos = new JsonArray();
+        JsonArray maiorEscrita = new JsonArray();
 
         for (List<ProcessoSilver> processos : agrupados.values()) {
             cpu.add(cpuGlobal(processos));
+            ProcessoSilver maiorAgressor = maiorPor(processos, ProcessoSilver::cpuPercent);
+            if (maiorAgressor == null) {
+                cpuMaiorAgressor.add(com.google.gson.JsonNull.INSTANCE);
+            } else {
+                cpuMaiorAgressor.add(cpuProcessoNaMaquina(maiorAgressor));
+            }
             memoria.add(arredondar(processos.stream().mapToDouble(ProcessoSilver::memoryMb).sum()));
+            ProcessoSilver maiorMemoria = maiorPor(processos, ProcessoSilver::memoryMb);
+            if (maiorMemoria == null) {
+                memoriaMaiorAgressor.add(com.google.gson.JsonNull.INSTANCE);
+            } else {
+                memoriaMaiorAgressor.add(arredondar(maiorMemoria.memoryMb()));
+            }
             lidos.add(totalBytesLidos(processos));
+            ProcessoSilver maiorLeitor = maiorPor(processos,
+                    processo -> processo.bytesRead() == null ? Double.NaN : processo.bytesRead().doubleValue());
+            if (maiorLeitor == null) {
+                maiorLeitura.add(com.google.gson.JsonNull.INSTANCE);
+            } else {
+                maiorLeitura.add(valorOuZero(maiorLeitor.bytesRead()));
+            }
             escritos.add(totalBytesEscritos(processos));
+            ProcessoSilver maiorEscritor = maiorPor(processos,
+                    processo -> processo.bytesWritten() == null ? Double.NaN : processo.bytesWritten().doubleValue());
+            if (maiorEscritor == null) {
+                maiorEscrita.add(com.google.gson.JsonNull.INSTANCE);
+            } else {
+                maiorEscrita.add(valorOuZero(maiorEscritor.bytesWritten()));
+            }
         }
 
         JsonObject cpuGrafico = grafico(labels, "CPU da máquina (%)", cpu);
+        List<ProcessoSilver> ultimaCaptura = agrupados.lastEntry().getValue();
+        ProcessoSilver maiorAgressorAtual = maiorPor(ultimaCaptura, ProcessoSilver::cpuPercent);
+        JsonObject serieMaiorAgressor = new JsonObject();
+        serieMaiorAgressor.addProperty("label", "Maior agressor: "
+                + (maiorAgressorAtual == null ? "—" : maiorAgressorAtual.processName()));
+        serieMaiorAgressor.add("data", cpuMaiorAgressor);
+        cpuGrafico.getAsJsonArray("datasets").add(serieMaiorAgressor);
+
         JsonObject ramGrafico = grafico(labels, "Memória dos processos (MiB)", memoria);
+        ProcessoSilver maiorMemoriaAtual = maiorPor(ultimaCaptura, ProcessoSilver::memoryMb);
+        JsonObject serieMaiorMemoria = new JsonObject();
+        serieMaiorMemoria.addProperty("label", "Maior agressor RAM: "
+                + (maiorMemoriaAtual == null ? "—" : maiorMemoriaAtual.processName()));
+        serieMaiorMemoria.add("data", memoriaMaiorAgressor);
+        ramGrafico.getAsJsonArray("datasets").add(serieMaiorMemoria);
+
         JsonObject discoGrafico = grafico(labels, "Bytes lidos acumulados", lidos);
         JsonArray discoDatasets = discoGrafico.getAsJsonArray("datasets");
         JsonObject escritosDataset = new JsonObject();
         escritosDataset.addProperty("label", "Bytes escritos acumulados");
         escritosDataset.add("data", escritos);
         discoDatasets.add(escritosDataset);
+        ProcessoSilver maiorLeitorAtual = maiorPor(ultimaCaptura,
+                processo -> processo.bytesRead() == null ? Double.NaN : processo.bytesRead().doubleValue());
+        JsonObject maiorLeitorDataset = new JsonObject();
+        maiorLeitorDataset.addProperty("label", "Maior leitor: "
+                + (maiorLeitorAtual == null ? "—" : maiorLeitorAtual.processName()) + " (Bytes lidos)");
+        maiorLeitorDataset.add("data", maiorLeitura);
+        discoDatasets.add(maiorLeitorDataset);
+
+        ProcessoSilver maiorEscritorAtual = maiorPor(ultimaCaptura,
+                processo -> processo.bytesWritten() == null ? Double.NaN : processo.bytesWritten().doubleValue());
+        JsonObject maiorEscritorDataset = new JsonObject();
+        maiorEscritorDataset.addProperty("label", "Maior escritor: "
+                + (maiorEscritorAtual == null ? "—" : maiorEscritorAtual.processName()) + " (Bytes escritos)");
+        maiorEscritorDataset.add("data", maiorEscrita);
+        discoDatasets.add(maiorEscritorDataset);
 
         JsonObject graficos = new JsonObject();
         graficos.add("cpu", cpuGrafico);
         graficos.add("ram", ramGrafico);
         graficos.add("disco", discoGrafico);
         return graficos;
+    }
+
+    private static ProcessoSilver maiorPor(List<ProcessoSilver> processos,
+                                           ToDoubleFunction<ProcessoSilver> obterValor) {
+        ProcessoSilver maior = null;
+        double maiorValor = Double.NEGATIVE_INFINITY;
+        for (ProcessoSilver processo : processos) {
+            if (processo.pid() == 0 || ehProcessoOcioso(processo.processName())) {
+                continue;
+            }
+            double valor = obterValor.applyAsDouble(processo);
+            if (!Double.isFinite(valor)) {
+                continue;
+            }
+            if (maior == null || valor > maiorValor) {
+                maior = processo;
+                maiorValor = valor;
+            }
+        }
+        return maior;
     }
 
     private static JsonObject grafico(JsonArray labels, String nome, JsonArray dados) {
